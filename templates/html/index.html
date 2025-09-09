@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Network Scheduler</title>
+</head>
+<body>
+    <h1>Network Test Scheduler</h1>
+    <p><a href="/schedule.ics">Download iCAL feed</a></p>
+    
+    <h2>Active Jobs</h2>
+    <ul>
+    {% for job in jobs %}
+        <li>{{ job.name }} (Runs {{ job.start }})</li>
+    {% endfor %}
+    </ul>
+</body>
+</html>
