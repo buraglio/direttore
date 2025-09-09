@@ -1,0 +1,29 @@
+# BGP Configuration Template - {{ bgp_as }}
+# Generated: {{ now().strftime('%Y-%m-%d %H:%M') }}
+
+{% if bgp_as is not defined or bgp_as == '' %}
+set protocols bgp group {{ bgp_group }} type internal
+{% else %}
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} type external
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} local-as {{ bgp_as }}
+{% endif %}
+
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} neighbor {{ neighbor_ip }} peer-as {{ peer_as }}
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} neighbor {{ neighbor_ip }} family inet unicast
+
+{% if route_reflector %}
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} cluster {{ cluster_id }}
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} neighbor {{ neighbor_ip }} route-reflector-client
+{% endif %}
+
+{% if authentication_key is defined and authentication_key != '' %}
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} neighbor {{ neighbor_ip }} authentication-key "{{ authentication_key }}"
+{% endif %}
+
+# Prefix limits
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} neighbor {{ neighbor_ip }} family inet unicast prefix-limit maximum {{ max_prefixes }}
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} neighbor {{ neighbor_ip }} family inet unicast prefix-limit teardown {{ prefix_warning_threshold }} idle-timeout 5
+
+# Route policies
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} neighbor {{ neighbor_ip }} import [ {{ import_policies|join(' ') }} ]
+set routing-instances {{ vrf }} protocols bgp group {{ bgp_group }} neighbor {{ neighbor_ip }} export [ {{ export_policies|join(' ') }} ]

@@ -1,0 +1,120 @@
+{% macro security_policy_rule(rule) -%}
+<entry name="{{ rule.name }}">
+  <to>
+    <member>{{ rule.to_zone|default('any') }}</member>
+  </to>
+  <from>
+    <member>{{ rule.from_zone|default('any') }}</member>
+  </from>
+  <source>
+    {% if rule.source is iterable and rule.source is not string %}
+      {% for src in rule.source %}
+        <member>{{ src }}</member>
+      {% endfor %}
+    {% else %}
+      <member>{{ rule.source|default('any') }}</member>
+    {% endif %}
+  </source>
+  <destination>
+    {% if rule.destination is iterable and rule.destination is not string %}
+      {% for dst in rule.destination %}
+        <member>{{ dst }}</member>
+      {% endfor %}
+    {% else %}
+      <member>{{ rule.destination|default('any') }}</member>
+    {% endif %}
+  </destination>
+  <application>
+    {% if rule.application is iterable and rule.application is not string %}
+      {% for app in rule.application %}
+        <member>{{ app }}</member>
+      {% endfor %}
+    {% else %}
+      <member>{{ rule.application|default('any') }}</member>
+    {% endif %}
+  </application>
+  <service>
+    {% if rule.service is iterable and rule.service is not string %}
+      {% for svc in rule.service %}
+        <member>{{ svc }}</member>
+      {% endfor %}
+    {% else %}
+      <member>{{ rule.service|default('any') }}</member>
+    {% endif %}
+  </service>
+  <category>
+    {% if rule.category is iterable and rule.category is not string %}
+      {% for cat in rule.category %}
+        <member>{{ cat }}</member>
+      {% endfor %}
+    {% else %}
+      <member>{{ rule.category|default('any') }}</member>
+    {% endif %}
+  </category>
+  <action>{{ rule.action|default('allow') }}</action>
+  <log-setting>{{ rule.log_setting|default('default') }}</log-setting>
+  <description>{{ rule.description|default('') }}</description>
+  {% if rule.tag is defined and rule.tag is iterable %}
+  <tag>
+    {% for t in rule.tag %}
+      <member>{{ t }}</member>
+    {% endfor %}
+  </tag>
+  {% endif %}
+  <disabled>{{ 'yes' if rule.disabled|default(false) else 'no' }}</disabled>
+  {% if rule.profile_setting is defined %}
+  <profile-setting>
+    {% if rule.profile_setting.group is defined %}
+    <group>
+      <member>{{ rule.profile_setting.group }}</member>
+    </group>
+    {% elif rule.profile_setting.virus is defined or rule.profile_setting.vulnerability is defined or rule.profile_setting.spyware is defined or rule.profile_setting.url_filtering is defined or rule.profile_setting.file_blocking is defined or rule.profile_setting.data_filtering is defined %}
+    <profiles>
+      {% if rule.profile_setting.virus is defined %}
+      <virus>
+        <member>{{ rule.profile_setting.virus }}</member>
+      </virus>
+      {% endif %}
+      {% if rule.profile_setting.vulnerability is defined %}
+      <vulnerability>
+        <member>{{ rule.profile_setting.vulnerability }}</member>
+      </vulnerability>
+      {% endif %}
+      {% if rule.profile_setting.spyware is defined %}
+      <spyware>
+        <member>{{ rule.profile_setting.spyware }}</member>
+      </spyware>
+      {% endif %}
+      {% if rule.profile_setting.url_filtering is defined %}
+      <url-filtering>
+        <member>{{ rule.profile_setting.url_filtering }}</member>
+      </url-filtering>
+      {% endif %}
+      {% if rule.profile_setting.file_blocking is defined %}
+      <file-blocking>
+        <member>{{ rule.profile_setting.file_blocking }}</member>
+      </file-blocking>
+      {% endif %}
+      {% if rule.profile_setting.data_filtering is defined %}
+      <data-filtering>
+        <member>{{ rule.profile_setting.data_filtering }}</member>
+      </data-filtering>
+      {% endif %}
+    </profiles>
+    {% endif %}
+  </profile-setting>
+  {% endif %}
+</entry>
+{%- endmacro %}
+
+<config>
+  <shared>
+    <rulebase>
+      <security>
+        <rules>
+          {{ security_policy_rule(policy_rule) }}
+        </rules>
+      </security>
+    </rulebase>
+  </shared>
+</config>

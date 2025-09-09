@@ -1,0 +1,15 @@
+result = task.run(
+    task=template_file,
+    template="junos/bgp.j2",
+    jinja_env={
+        "vrf": "default",
+        "bgp_group": "EBGP_PEERS",
+        "bgp_as": 65001,
+        "neighbor_ip": "192.168.10.2",
+        "peer_as": 65002,
+        "max_prefixes": 1000,
+        "prefix_warning_threshold": 900,
+        "import_policies": ["FILTER_IN"],
+        "export_policies": ["FILTER_OUT"]
+    }
+)

@@ -1,0 +1,42 @@
+# Firewall Rule Template - {{ rule_name }}
+# Generated: {{ now().strftime('%Y-%m-%d %H:%M') }}
+
+/ip firewall filter
+{% if action == 'accept' %}
+add chain={{ chain }} action=accept \
+    {% if src_address is defined %}src-address={{ src_address }} {% endif %}\
+    {% if dst_address is defined %}dst-address={{ dst_address }} {% endif %}\
+    {% if protocol is defined %}protocol={{ protocol }} {% endif %}\
+    {% if dst_port is defined %}dst-port={{ dst_port }} {% endif %}\
+    log={{ 'yes' if log else 'no' }} \
+    log-prefix="{{ rule_name }}" \
+    place-before=0 \
+    comment="{{ rule_name }}"
+{% elif action == 'drop' %}
+add chain={{ chain }} action=drop \
+    {% if src_address is defined %}src-address={{ src_address }} {% endif %}\
+    {% if dst_address is defined %}dst-address={{ dst_address }} {% endif %}\
+    {% if protocol is defined %}protocol={{ protocol }} {% endif %}\
+    {% if dst_port is defined %}dst-port={{ dst_port }} {% endif %}\
+    log={{ 'yes' if log else 'no' }} \
+    log-prefix="{{ rule_name }}-DROP" \
+    place-before=0 \
+    comment="{{ rule_name }}"
+{% endif %}
+
+# Rate limiting (optional)
+{% if rate_limit is defined %}
+/ip firewall filter
+add chain={{ chain }} action=jump jump-target=rate-limit \
+    {% if src_address is defined %}src-address={{ src_address }} {% endif %}\
+    {% if dst_address is defined %}dst-address={{ dst_address }} {% endif %}\
+    protocol={{ protocol }} \
+    dst-port={{ dst_port }} \
+    comment="{{ rule_name }}-RATE"
+
+/ip firewall filter
+add chain=rate-limit action=drop \
+    src-address={{ src_address }} \
+    time={{ rate_limit.window }}/{{ rate_limit.burst }} \
+    comment="{{ rule_name }}-RATE-LIMIT"
+{% endif %}

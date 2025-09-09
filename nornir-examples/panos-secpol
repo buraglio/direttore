@@ -1,0 +1,24 @@
+result = task.run(
+    task=template_file,
+    template="panos/security_policy.j2",
+    jinja_env={
+        "policy_rule": {
+            "name": "ALLOW_WEB_ACCESS",
+            "from_zone": "trust",
+            "to_zone": "untrust",
+            "source": ["10.0.0.0/24"],
+            "destination": ["any"],
+            "application": ["web-browsing", "ssl"],
+            "service": ["service-http", "service-https"],
+            "action": "allow",
+            "log_setting": "default",
+            "description": "Allow web access from internal network",
+            "tag": ["prod", "web-access"],
+            "profile_setting": {
+                "virus": "default",
+                "spyware": "aggressive",
+                "url_filtering": "standard"
+            }
+        }
+    }
+)

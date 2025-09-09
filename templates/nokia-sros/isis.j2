@@ -1,0 +1,54 @@
+# ISIS Configuration Template - {{ router_id }}
+# Generated: {{ now().strftime('%Y-%m-%d %H:%M') }}
+
+# Global ISIS configuration
+configure router isis
+    autonomous-system {{ autonomous_system }}
+    level-capability {{ level_capability|default('level-1-2') }}
+    net {{ net_address }}
+    level {{ isis_level|default(2) }} wide-metrics-only
+
+    # Timers
+    level {{ isis_level|default(2) }} hello-interval {{ hello_interval|default(10) }}
+    level {{ isis_level|default(2) }} hold-time {{ hold_time|default(30) }}
+    lsp-lifetime {{ lsp_lifetime|default(1200) }}
+    lsp-refresh {{ lsp_refresh|default(900) }}
+
+    # Route preference
+    preference {{ external_preference|default(180) }} external
+    preference {{ internal_preference|default(15) }} internal
+
+    # Traffic engineering
+    {% if traffic_engineering is defined and traffic_engineering.enabled %}
+    traffic-engineering
+        router-id {{ router_id }}
+        {% if traffic_engineering.igp_shortcuts %}
+        igp-shortcuts
+        {% endif %}
+        {% if traffic_engineering.te_metric is defined %}
+        metric {{ traffic_engineering.te_metric }}
+        {% endif %}
+    exit
+    {% endif %}
+
+    # Interface configuration
+    {% for interface in interfaces %}
+    interface "{{ interface.name }}"
+        level {{ interface.level|default(isis_level|default(2)) }}
+        {% if interface.mtu is defined %}
+        interface-mtu {{ interface.mtu }}
+        {% endif %}
+        {% if interface.circuit_type is defined %}
+        circuit-type {{ interface.circuit_type }}
+        {% endif %}
+        {% if interface.point_to_point is defined and interface.point_to_point %}
+        point-to-point
+        {% endif %}
+    exit
+    {% endfor %}
+
+    # Route policy
+    {% if policy_name is defined %}
+    export-policy "{{ policy_name }}"
+    {% endif %}
+exit

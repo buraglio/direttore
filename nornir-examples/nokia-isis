@@ -1,0 +1,20 @@
+result = task.run(
+    task=template_file,
+    template="nokia/isis.j2",
+    jinja_env={
+        "router_id": "10.0.0.1",
+        "autonomous_system": 4200000001,
+        "net_address": "49.0001.0000.0000.0001.00",
+        "interfaces": [
+            {"name": "system", "level": 2},
+            {"name": "to-core-1", "mtu": 9000, "circuit_type": "level-2-only"},
+            {"name": "to-access-1", "point_to_point": True}
+        ],
+        "policy_name": "EXPORT_ISIS",
+        "traffic_engineering": {
+            "enabled": True,
+            "router_id": "10.0.0.1",
+            "igp_shortcuts": True
+        }
+    }
+)

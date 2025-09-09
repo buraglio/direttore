@@ -1,0 +1,37 @@
+result = task.run(
+    task=template_file,
+    template="arista/bgp.j2",
+    jinja_env={
+        "bgp_as": 65001,
+        "router_id": "10.0.0.1",
+        "maximum_paths": {
+            "ebgp": 4,
+            "ibgp": 8
+        },
+        "bgp_neighbors": [
+            {
+                "ip": "192.168.10.2",
+                "as": 65002,
+                "description": "Core-Router-1",
+                "password": "7 $1c$secret",
+                "route_map_in": "FILTER_IN",
+                "route_map_out": "FILTER_OUT"
+            },
+            {
+                "ip": "10.0.1.1",
+                "as": 65001,
+                "description": "Route-Reflector",
+                "ebgp_multihop": 2,
+                "send_community": True
+            }
+        ],
+        "address_families": [
+            {
+                "name": "ipv4 unicast",
+                "neighbor": "192.168.10.2",
+                "maximum_prefixes": 1000,
+                "warning_threshold": 90
+            }
+        ]
+    }
+)

@@ -1,0 +1,18 @@
+result = task.run(
+    task=template_file,
+    template="mikrotik/firewall.j2",
+    jinja_env={
+        "rule_name": "WEB_ACCESS",
+        "chain": "input",
+        "action": "accept",
+        "src_address": "10.0.0.0/24",
+        "dst_address": "192.168.1.10",
+        "protocol": "tcp",
+        "dst_port": 80,
+        "log": True,
+        "rate_limit": {
+            "window": "30s",
+            "burst": "10"
+        }
+    }
+)
