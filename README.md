@@ -155,7 +155,7 @@ Verify all requirements are met:
 | **iCAL scheduling**        | Open ```http://<server>/schedule.ics``` in Apple Calendar    | Events appear in calendar           |
 | **CLI access**             | ```source nornir_env/bin/activate && nr-inventory --list```  | All lab devices listed              |
 
-## 🚀 Usage Examples
+## Usage Examples
 
 ### CLI Operations
 ```bash
@@ -177,7 +177,7 @@ echo "0 2 * * * cd /opt/network-automation && python deploy.py --groups bgp_rout
 2. Download iCAL feed for calendar integration
 3. View scheduled jobs in UI
 
-## 🌱 Post-MVP Extensions
+## Post-MVP Extensions
 | Feature                | Effort | Implementation Path                          |
 |------------------------|--------|----------------------------------------------|
 | Two-way iCAL sync      | 8 hrs  | Add ```caldav``` library integration             |
@@ -185,7 +185,7 @@ echo "0 2 * * * cd /opt/network-automation && python deploy.py --groups bgp_rout
 | RBAC                   | 10 hrs | Implement Auth0 SSO with NetBox              |
 | Real-time monitoring   | 12 hrs | Add Prometheus metrics endpoint              |
 
-## 🤝 Contributing
+## Contributing
 Contributions are welcome! Please follow these steps:
 1. Fork the repository
 2. Create your feature branch (```git checkout -b feature/direttore```)
