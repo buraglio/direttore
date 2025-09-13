@@ -27,7 +27,7 @@ A vendor-agnostic network test lab automation platform with Git-backed configura
 
 ## Installation
 
-### Phase 1: Foundation Setup (10 hours)
+### Phase 1: Foundation Setup
 #### 1. Deploy NetBox
 ```bash
 # Install dependencies
