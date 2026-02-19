@@ -8,7 +8,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from ics import Calendar, Event
+from icalendar import Calendar, Event, vText, vDatetime
 
 from api.db import get_db
 from api.models import Reservation, ReservationStatus, ResourceType
@@ -155,12 +155,14 @@ async def export_ical(db: AsyncSession = Depends(get_db)) -> str:
     reservations = result.scalars().all()
 
     cal = Calendar()
+    cal.add('prodid', '-//Direttore//Lab Scheduler//EN')
+    cal.add('version', '2.0')
     for r in reservations:
-        e = Event(
-            name=f"[{r.resource_type.upper()}] {r.title}",
-            begin=r.start_dt,
-            end=r.end_dt,
-            description=f"Requester: {r.requester}\nNode: {r.proxmox_node}\nVMID: {r.vmid}\n{r.notes or ''}",
-        )
-        cal.events.add(e)
-    return cal.serialize()
+        e = Event()
+        e.add('summary', f"[{r.resource_type.upper()}] {r.title}")
+        e.add('dtstart', r.start_dt)
+        e.add('dtend', r.end_dt)
+        e.add('description', f"Requester: {r.requester}\nNode: {r.proxmox_node}\nVMID: {r.vmid}\n{r.notes or ''}")
+        e.add('uid', f"{r.id}@direttore")
+        cal.add_component(e)
+    return cal.to_ical().decode('utf-8')
