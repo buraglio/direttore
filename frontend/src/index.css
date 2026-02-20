@@ -1,0 +1,42 @@
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --cyan: #00bcd4;
+  --cyan-dim: #00838f;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #e3b341;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+#root { display: flex; min-height: 100vh; }
+
+/* FullCalendar dark-mode overrides */
+.fc {
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: var(--surface);
+  --fc-neutral-bg-color: var(--surface2);
+  --fc-event-bg-color: var(--cyan-dim);
+  --fc-event-border-color: var(--cyan);
+  --fc-event-text-color: #fff;
+  --fc-today-bg-color: rgba(0, 188, 212, 0.07);
+}
+.fc .fc-toolbar-title { color: var(--text); font-size: 1rem; }
+.fc .fc-col-header-cell-cushion { color: var(--muted); }
+.fc .fc-daygrid-day-number { color: var(--muted); }
+.fc .fc-button { background: var(--surface2); border-color: var(--border); color: var(--text); }
+.fc .fc-button:hover { background: var(--border); }
+.fc .fc-button-primary:not(:disabled).fc-button-active { background: var(--cyan-dim); border-color: var(--cyan); }
