@@ -52,16 +52,16 @@ FullCalendar week/month/day view. Click any time slot to reserve a resource wind
 ## Screenshots
 
 ### Dashboard
-![Dashboard — Proxmox node cards with resource usage](/Users/buraglio/.gemini/antigravity/brain/2ada0ae4-a464-4848-a92c-959c5e09c7bd/direttore_dashboard_1771554827346.png)
+![Dashboard — Proxmox node cards with resource usage](docs/screenshots/dashboard.png)
 
 ### Resource Browser
-![Resources — VM table with status and action buttons](/Users/buraglio/.gemini/antigravity/brain/2ada0ae4-a464-4848-a92c-959c5e09c7bd/direttore_resources_1771554856112.png)
+![Resources — VM table with status and action buttons](docs/screenshots/resources.png)
 
 ### Provision Wizard (Step 3 — Resources)
-![Provision wizard showing resource configuration step](/Users/buraglio/.gemini/antigravity/brain/2ada0ae4-a464-4848-a92c-959c5e09c7bd/direttore_provision_1771554900727.png)
+![Provision wizard showing resource configuration step](docs/screenshots/provision.png)
 
 ### Reservation Calendar
-![Reservations calendar with scheduled lab sessions](/Users/buraglio/.gemini/antigravity/brain/2ada0ae4-a464-4848-a92c-959c5e09c7bd/direttore_reservations_1771554923092.png)
+![Reservations calendar with scheduled lab sessions](docs/screenshots/reservations.png)
 
 ---
 
