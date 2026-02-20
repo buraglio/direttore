@@ -171,43 +171,43 @@ Frontend available at **http://localhost:5173**
 
 ## nginx Reverse Proxy
 
-An example nginx configuration is provided at [`docs/nginx/direttore.conf`](docs/nginx/direttore.conf).
+Example configs live in [`docs/nginx/`](docs/nginx/):
 
-It maps everything under a **single hostname** with no port numbers visible to users:
+| File | Purpose |
+|---|---|
+| [`direttore.conf`](docs/nginx/direttore.conf) | Main server block (HTTP + HTTPS variants) |
+| [`websocket_map.conf`](docs/nginx/websocket_map.conf) | `map` block required for WebSocket/HMR support — goes in `http {}` context |
+
+### URL routing
 
 | Path prefix | Upstream |
 |---|---|
 | `/api/*` | FastAPI backend — `127.0.0.1:8000` |
-| `/docs`, `/redoc`, `/openapi.json` | FastAPI Swagger/ReDoc (proxied from backend) |
-| `/vite-hmr` | Vite HMR WebSocket (dev mode only) |
+| `/docs`, `/redoc`, `/openapi.json` | FastAPI Swagger/ReDoc (from backend) |
 | `/` (everything else) | React frontend — `127.0.0.1:5173` |
 
-**Quick start (bare-metal, no TLS — dev/internal only):**
+Vite's HMR WebSocket is served on the same port as the dev server and is handled transparently via the `$connection_upgrade` map — no separate path needed.
 
-```nginx
-# /etc/nginx/sites-available/direttore
-server {
-    listen 80;
-    server_name direttore.example.com;
+> [!IMPORTANT]
+> **Vite host check** — Vite's dev server rejects any request whose `Host` header isn't `localhost`/`127.0.0.1`. When nginx proxies from a real hostname (e.g. `netserv.example.com`), Vite returns an *"Invalid Host header"* error. The `vite.config.js` in this repo already sets `allowedHosts: 'all'` and `host: '0.0.0.0'` to fix this. If you see a blank page or that error, make sure the Vite dev server was **restarted** after the config change.
 
-    location /api/ { proxy_pass http://127.0.0.1:8000; }
-    location ~ ^/(docs|redoc|openapi\.json) { proxy_pass http://127.0.0.1:8000; }
-    location / { proxy_pass http://127.0.0.1:5173; }
-}
-```
+### Install (bare-metal)
 
 ```bash
+# 1. Install the map snippet (http context — required for WebSocket support)
+sudo cp docs/nginx/websocket_map.conf /etc/nginx/conf.d/
+
+# 2. Install the site config
+sudo cp docs/nginx/direttore.conf /etc/nginx/sites-available/direttore
 sudo ln -s /etc/nginx/sites-available/direttore /etc/nginx/sites-enabled/
+
+# 3. Edit server_name + certificate paths, then validate and reload
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-The full config in `docs/nginx/direttore.conf` adds:
-- **TLS (Let's Encrypt)** — HTTP → HTTPS redirect, modern cipher suite, HSTS
-- **Security headers** — `X-Frame-Options`, `CSP`, `HSTS`, `Referrer-Policy`
-- **Keep-alive upstreams** and tuned proxy timeouts
-- **Static-file alternative** (serve the built `dist/` bundle directly from nginx instead of proxying to the frontend service)
+> **No TLS yet?** `direttore.conf` includes a commented-out plain HTTP server block at the bottom — use that for internal networks or staging.
 
-> **Docker Compose users:** replace `127.0.0.1:8000` / `127.0.0.1:5173` with the service names `api:8000` and `frontend:80`, and add `resolver 127.0.0.11 valid=10s;` inside the server block.
+> **Docker Compose:** replace `127.0.0.1:8000` / `127.0.0.1:5173` with `api:8000` / `frontend:80` and add `resolver 127.0.0.11 valid=10s;` inside the server block.
 
 ---
 
