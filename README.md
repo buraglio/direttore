@@ -1,201 +1,280 @@
-# Direttore - a framework for managing IT test lab infrastructure
-## Network Test Lab Automation (NetBox + Nornir)
+# Direttore — Lab Infrastructure Management Platform
 
+A vendor-agnostic network and compute lab automation platform combining **NetBox** inventory, **Nornir** network device configuration, and a modern **React + FastAPI** web interface for provisioning and reserving Proxmox VMs and LXC containers.
 
-A vendor-agnostic network test lab automation platform with Git-backed configuration management, iCAL scheduling, and multi-vendor support (Juniper, Mikrotik, Nokia, Arista, Palo Alto).
+---
 
-## Direttore Overview
-- **Static physical topology** (no cable/port changes)
-- **Multi-vendor support** via Nornir plugins
-- **Git-backed configuration storage** (full audit trail)
-- **Web interface** for scheduling (iCAL feed)
-- **CLI access** for direct automation
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   React Frontend (Vite)                 │
+│   Dashboard · Resources · Provision Wizard · Calendar   │
+└──────────────────┬────────────────────────────┬─────────┘
+                   │ REST API                   │
+┌──────────────────▼────────────────────────────▼─────────┐
+│                  FastAPI Backend (api/)                  │
+├─────────────┬────────────────┬──────────────────────────┤
+│  Proxmox    │  Reservations  │      NetBox Proxy        │
+│  (proxmoxer)│  (SQLAlchemy)  │      (httpx)             │
+└─────────────┴────────────────┴──────────────────────────┘
+        │                                      │
+  Proxmox VE API                         NetBox API
+  (QEMU VMs + LXC)                  (Device inventory)
+
+                    + Nornir pipeline (existing)
+                    + Git-backed config storage (existing)
+```
+
+---
+
+## Web UI Features
+
+### Dashboard
+Real-time cluster overview — one card per Proxmox node showing CPU, RAM, and disk utilization with auto-refresh every 30 seconds.
+
+### Resources
+Browse all VMs and LXC containers across nodes. Start, stop, and delete resources directly from the table.
+
+### Provision Wizard
+5-step wizard to provision a new VM or LXC container:
+1. **Type** — choose VM (QEMU/KVM) or LXC Container, select target node
+2. **Template** — select ISO or container template from node storage
+3. **Resources** — set name, VMID, CPU, RAM, disk
+4. **Review** — confirm before submit
+5. **Progress** — live task progress bar polling the Proxmox UPID
+
+### Reservation Calendar
+FullCalendar week/month/day view. Click any time slot to reserve a resource window. Conflict detection prevents double-booking the same node.
+
+---
+
+## Screenshots
+
+### Dashboard
+![Dashboard — Proxmox node cards with resource usage](/Users/buraglio/.gemini/antigravity/brain/2ada0ae4-a464-4848-a92c-959c5e09c7bd/direttore_dashboard_1771554827346.png)
+
+### Resource Browser
+![Resources — VM table with status and action buttons](/Users/buraglio/.gemini/antigravity/brain/2ada0ae4-a464-4848-a92c-959c5e09c7bd/direttore_resources_1771554856112.png)
+
+### Provision Wizard (Step 3 — Resources)
+![Provision wizard showing resource configuration step](/Users/buraglio/.gemini/antigravity/brain/2ada0ae4-a464-4848-a92c-959c5e09c7bd/direttore_provision_1771554900727.png)
+
+### Reservation Calendar
+![Reservations calendar with scheduled lab sessions](/Users/buraglio/.gemini/antigravity/brain/2ada0ae4-a464-4848-a92c-959c5e09c7bd/direttore_reservations_1771554923092.png)
+
+---
 
 ## Prerequisites
 
-### Hardware/Software
-- Ubuntu 22.04 LTS server (8GB RAM, 4 vCPU, 50GB disk)
-- Physical/virtual lab devices with:
-  - SSH access (key-based authentication)
-  - API access enabled (NETCONF for Juniper/Nokia, XML API for PANW)
-- [GitLab Community Edition](https://about.gitlab.com/install/) (self-hosted or cloud)
-**Self hosted Gitlab is suggested for security considerations, this should work with any Git repository**
+- Python 3.11+ (backend)
+- Node.js 20+ (frontend)
+- A Proxmox VE host, **or** use `PROXMOX_MOCK=true` for development without hardware
+- NetBox instance (optional — only needed for the inventory proxy routes)
 
-### Required Accounts
-- NetBox admin account (created during setup)
-- GitLab project maintainer access
+---
 
-## Installation
+## Installation & Setup
 
-### Phase 1: Foundation Setup
-#### 1. Deploy NetBox
+### 1. Clone and branch
+
 ```bash
-# Install dependencies
-sudo apt update && sudo apt install -y postgresql libpq-dev redis-server python3-venv git
-
-# Clone and configure
-git clone -b v3.7 https://github.com/netbox-community/netbox.git
-cd netbox
-
-# Generate secure secret key
-SECRET_KEY=$(pwgen -s 50 1)
-sed -i "s/SECRET_KEY = ''/SECRET_KEY = '$SECRET_KEY'/" netbox/netbox/configuration.py
-
-# Initialize and start
-./upgrade.sh
-sudo systemctl start netbox netbox-rq
-```
-> **Verify**: Access ```http://[::1]:8000``` → Login with ```admin/admin```
-
-#### 2. Configure NetBox Inventory
-1. Create site: *Organization → Sites → Add*  
-   - Name: ```Lab-Test```
-2. Add devices (*Devices → Add Device*):  
-   | Field          | Value for Juniper | Value for PANW       |
-   |----------------|-------------------|----------------------|
-   | Platform       | ```juniper_junos```   | ```paloalto_panos```     |
-   | Serial         | ```JUNIPER-SERIAL```  | ```PANW-SERIAL```        |
-   | Custom Fields  | ```netconf_port: 830``` | ```api_key: YOUR_API_KEY``` |
-3. Map interfaces:  
-   - For each device, add interfaces → Connect cables (e.g., ```xe-0/0/0``` → ```sw1-eth1```)
-
-#### 3. Setup GitLab Repository
-```bash
-# Create project via GitLab UI:
-# 1. New Project → Create blank project
-# 2. Name: `network-configs`
-# 3. Set as Private
-# 4. Protect main branch: Settings → Repository → Protected Branches
-
-# Generate deploy key
-ssh-keygen -t ed25519 -f ~/.ssh/netbox_gitlab -N ""
-cat ~/.ssh/netbox_gitlab.pub
-```
-> **Paste** public key in *Project → Settings → Repository → Deploy Keys* (enable **Write access**)
-
-### Phase 2: Automation Pipeline
-#### 1. Install Nornir Environment
-```bash
-python3 -m venv nornir_env
-source nornir_env/bin/activate
-pip install nornir "nornir[paramiko]" nornir-scrapli nornir-jinja2 nornir-utils gitpython
+git clone <repo-url>
+cd direttore
+git checkout feature/react-fastapi-frontend
 ```
 
-#### 2. Configure NetBox Inventory Plugin
+### 2. Configure environment
 
-verify `invendory.py`
-
-`chmod +x inventory.py`
-
-#### 3. Create Configuration Templates
-Directory structure:
-```text
-templates/
-├── junos/
-│   └── bgp.j2        # {% for peer in bgp_peers %}set protocols bgp group ...{% endfor %}
-├── panos/
-│   └── nat.j2        # <entry name="{{ rule_name }}"><to><member>...</member></to></entry>
-└── nokia/
-    └── isis.j2       # configure router isis interface "{{ interface }}"
+```bash
+cp .env.example .env
+# Edit .env with your Proxmox host, credentials, and NetBox token
+# Set PROXMOX_MOCK=true for development without real hardware
 ```
 
-#### 4. Implement Git-Backed Deployment
-Create ```deploy.py```:
+### 3. Backend setup
 
-verify `deploy.py`
-
-`chmod +x deploy.py`
-
-### Phase 3: Scheduling & Web UI (optional, still alpha)
-#### 1. Setup iCAL Scheduler
 ```bash
-pip install flask ics gunicorn
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-api.txt
+
+# Start the API server
+PROXMOX_MOCK=true uvicorn api.main:app --reload --port 8000
 ```
 
-Create ```scheduler.py```:
+API docs available at **http://localhost:8000/docs**
 
-verify `scheduler.py`
+### 4. Frontend setup
 
-`chmod +x scheduler.py`
-
-#### 2. Configure Web Interface
-
-verify ```templates/html/index.html```:
-
-#### 3. Start Scheduler Service
 ```bash
-# Create systemd service
-sudo tee /etc/systemd/system/scheduler.service <<EOF
-[Unit]
-Description=Network Scheduler
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/opt/network-automation
-ExecStart=/opt/network-automation/nornir_env/bin/gunicorn -w 4 -b 0.0.0.0:5000 scheduler:app
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl enable scheduler && sudo systemctl start scheduler
+cd frontend
+npm install
+npm run dev
 ```
 
-## Validate Direttore
+Frontend available at **http://localhost:5173**
 
-Verify all requirements are met:
+---
 
-| Requirement                | Validation Command/Step                                  | Expected Result                     |
-|----------------------------|----------------------------------------------------------|-------------------------------------|
-| **Physical topology**      | Check NetBox device interfaces                           | All cables connected correctly      |
-| **Git config storage**     | ```cd /opt/network-configs && git log```                     | Commits after config deployments    |
-| **Multi-vendor push**      | ```python deploy.py --hosts fw1```                           | PANW config applied successfully    |
-| **iCAL scheduling**        | Open ```http://<server>/schedule.ics``` in Apple Calendar    | Events appear in calendar           |
-| **CLI access**             | ```source nornir_env/bin/activate && nr-inventory --list```  | All lab devices listed              |
+## Environment Variables
 
-## Usage Examples
+| Variable | Default | Description |
+|---|---|---|
+| `PROXMOX_HOST` | `192.168.1.100` | Proxmox VE hostname or IP |
+| `PROXMOX_USER` | `root@pam` | Proxmox API user |
+| `PROXMOX_PASSWORD` | — | Proxmox API password |
+| `PROXMOX_VERIFY_SSL` | `false` | Verify TLS certificate |
+| `PROXMOX_MOCK` | `false` | Use mock data (no real Proxmox needed) |
+| `NETBOX_URL` | `http://localhost:8000` | NetBox base URL |
+| `NETBOX_TOKEN` | — | NetBox API token |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./direttore.db` | SQLAlchemy async DB URL |
+| `API_CORS_ORIGINS` | `http://localhost:5173,...` | Comma-separated allowed CORS origins |
 
-### CLI Operations
+---
+
+## API Reference
+
+### Proxmox Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/proxmox/nodes` | List nodes with CPU/RAM/disk stats |
+| `GET` | `/api/proxmox/nodes/{node}/vms` | List QEMU VMs |
+| `POST` | `/api/proxmox/nodes/{node}/vms` | Create a VM |
+| `POST` | `/api/proxmox/nodes/{node}/vms/{vmid}/{action}` | start / stop / reboot / shutdown / delete |
+| `GET` | `/api/proxmox/nodes/{node}/lxc` | List LXC containers |
+| `POST` | `/api/proxmox/nodes/{node}/lxc` | Create a container |
+| `POST` | `/api/proxmox/nodes/{node}/lxc/{vmid}/{action}` | start / stop / reboot / shutdown / delete |
+| `GET` | `/api/proxmox/nodes/{node}/templates` | List available ISOs and templates |
+| `GET` | `/api/proxmox/tasks/{node}/{upid}` | Poll task status by UPID |
+
+### Reservation Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/reservations/` | List reservations (filterable by `?start=&end=`) |
+| `POST` | `/api/reservations/` | Create reservation (conflict check included) |
+| `GET` | `/api/reservations/{id}` | Get a single reservation |
+| `PATCH` | `/api/reservations/{id}` | Update a reservation |
+| `DELETE` | `/api/reservations/{id}` | Cancel a reservation |
+| `GET` | `/api/reservations/export/ical` | iCAL feed for calendar apps |
+
+### Inventory Endpoints (NetBox proxy)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/inventory/devices` | Proxy NetBox device list |
+| `GET` | `/api/inventory/prefixes` | Proxy NetBox IP prefix list |
+
+---
+
+## Docker Compose (Local Dev)
+
 ```bash
-# Activate environment
-source nornir_env/bin/activate
+cp .env.example .env   # set PROXMOX_MOCK=true
+docker compose up
+```
 
-# List all devices
+- API: **http://localhost:8000**
+- Frontend: **http://localhost:5173**
+
+---
+
+## Project Structure
+
+```
+direttore/
+├── api/                      # FastAPI backend
+│   ├── main.py               # App entrypoint, CORS, lifespan
+│   ├── config.py             # Pydantic-settings from .env
+│   ├── db.py                 # Async SQLAlchemy engine
+│   ├── models.py             # Reservation, ResourcePool ORM models
+│   ├── proxmox/
+│   │   ├── client.py         # proxmoxer wrapper + mock data
+│   │   ├── vms.py            # QEMU VM CRUD
+│   │   ├── containers.py     # LXC container CRUD
+│   │   └── templates.py      # ISO/template listing
+│   └── routes/
+│       ├── proxmox.py        # /api/proxmox/* routes
+│       ├── reservations.py   # /api/reservations/* routes
+│       └── inventory.py      # /api/inventory/* routes
+├── frontend/                 # React + Vite SPA
+│   ├── src/
+│   │   ├── api/              # Axios client + typed API functions
+│   │   ├── components/
+│   │   │   └── Layout.jsx    # Sidebar navigation
+│   │   └── pages/
+│   │       ├── Dashboard.jsx     # Node cards + resource bars
+│   │       ├── Resources.jsx     # VM/CT table with actions
+│   │       ├── Provision.jsx     # 5-step provisioning wizard
+│   │       └── Reservations.jsx  # FullCalendar + booking modal
+│   └── Dockerfile.frontend
+├── templates/                # Jinja2 network config templates
+│   ├── junos/, arista/, panos/, nokia-sros/, mikrotik/
+│   └── html/                 # Legacy Flask template (superseded)
+├── nornir-examples/          # Nornir task examples
+├── inventory.py              # Nornir + NetBox inventory plugin
+├── deploy.py                 # Git-backed config deployment
+├── scheduler.py              # Legacy iCAL scheduler (superseded by API)
+├── requirements-api.txt      # Backend Python dependencies
+├── Dockerfile.api            # Backend Docker image
+├── docker-compose.yml        # Full-stack local dev
+└── .env.example              # Environment variable template
+```
+
+---
+
+## Connecting a Real Proxmox Host
+
+1. Set `PROXMOX_MOCK=false` (or remove the flag) in `.env`
+2. Fill in `PROXMOX_HOST`, `PROXMOX_USER`, `PROXMOX_PASSWORD`
+3. If using a self-signed certificate, set `PROXMOX_VERIFY_SSL=false`
+4. Ensure the Proxmox user has `VM.Allocate`, `VM.PowerMgmt`, `Datastore.Allocate` privileges
+
+```bash
+# Proxmox — create a dedicated API user (recommended over root)
+pveum role add DirettoreRole -privs "VM.Allocate VM.PowerMgmt VM.Console Datastore.AllocateSpace Pool.Allocate"
+pveum user add direttore@pve --password <password>
+pveum aclmod / -user direttore@pve -role DirettoreRole
+```
+
+---
+
+## Existing Nornir Workflow
+
+The original network automation pipeline is unchanged and can be used alongside the new web UI:
+
+```bash
+source .venv/bin/activate
+
+# List all devices from NetBox
 nr-inventory --list
 
 # Deploy BGP config to Juniper devices
 python deploy.py --groups juniper
-
-# Schedule daily BGP test
-echo "0 2 * * * cd /opt/network-automation && python deploy.py --groups bgp_routers" | crontab -
 ```
-
-### Web Interface 
-1. Access ```http://<server-ip>```
-2. Download iCAL feed for calendar integration
-3. View scheduled jobs in UI
-
-## Post-MVP Extensions
-| Feature                | Effort | Implementation Path                          |
-|------------------------|--------|----------------------------------------------|
-| Two-way iCAL sync      | 8 hrs  | Add ```caldav``` library integration             |
-| Config validation      | 5 hrs  | Integrate ```yangify``` for Juniper/Nokia        |
-| RBAC                   | 10 hrs | Implement Auth0 SSO with NetBox              |
-| Real-time monitoring   | 12 hrs | Add Prometheus metrics endpoint              |
-
-## Contributing
-Contributions are welcome! Please follow these steps:
-1. Fork the repository
-2. Create your feature branch (```git checkout -b feature/direttore```)
-3. Commit your changes (```git commit -m 'Add some direttore'```)
-4. Push to the branch (```git push origin feature/direttore```)
-5. Open a Pull Request
-
 
 ---
 
-> **Note**: This MVP assumes **static physical topology** - all cable connections remain fixed. Device additions/removals are handled through NetBox inventory updates only.  
-> **Critical Path**: NetBox inventory setup → Nornir task templates → Git commit workflow
+## Roadmap
 
+| Feature | Effort |
+|---|---|
+| RBAC / Auth (Auth0 or local) | 10 hrs |
+| Real-time VM console (xterm.js + WebSocket) | 15 hrs |
+| Snapshot management UI | 5 hrs |
+| Prometheus metrics endpoint | 8 hrs |
+| Two-way iCAL sync (CalDAV) | 8 hrs |
+| YANG config validation | 5 hrs |
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-change`
+3. Commit your changes: `git commit -m 'Add my change'`
+4. Push and open a pull request
+
+> **Note**: Set `PROXMOX_MOCK=true` during development so no Proxmox hardware is required.
