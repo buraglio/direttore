@@ -8,6 +8,10 @@ export const getContainers = (node) => client.get(`/api/proxmox/nodes/${node}/lx
 
 export const getTemplates = (node) => client.get(`/api/proxmox/nodes/${node}/templates`).then(r => r.data);
 
+export const getNetworks = (node) => client.get(`/api/proxmox/nodes/${node}/networks`).then(r => r.data);
+
+export const getStorage = (node) => client.get(`/api/proxmox/nodes/${node}/storage`).then(r => r.data);
+
 export const createVM = (node, payload) =>
     client.post(`/api/proxmox/nodes/${node}/vms`, payload).then(r => r.data);
 

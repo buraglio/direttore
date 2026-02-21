@@ -86,6 +86,45 @@ MOCK_TEMPLATES: Dict[str, List[Dict[str, Any]]] = {
     ],
 }
 
+MOCK_NETWORKS: Dict[str, List[Dict[str, Any]]] = {
+    "pve-01": [
+        {"iface": "vmbr0", "type": "bridge", "active": 1, "comments": "Main LAN bridge"},
+        {"iface": "vmbr1", "type": "bridge", "active": 1, "comments": "Lab VLAN trunk"},
+        {"iface": "vmbr2", "type": "bridge", "active": 0, "comments": "Storage network (inactive)"},
+    ],
+    "pve-02": [
+        {"iface": "vmbr0", "type": "bridge", "active": 1, "comments": "Main LAN bridge"},
+        {"iface": "vmbr1", "type": "bridge", "active": 1, "comments": "Lab VLAN trunk"},
+    ],
+}
+
+MOCK_STORAGE: Dict[str, List[Dict[str, Any]]] = {
+    "pve-01": [
+        {
+            "storage": "local-lvm", "type": "lvmthin", "content": "rootdir,images",
+            "avail": 450_000_000_000, "total": 1_099_511_627_776, "enabled": 1,
+        },
+        {
+            "storage": "local", "type": "dir", "content": "vztmpl,iso,backup,rootdir",
+            "avail": 48_318_382_080, "total": 107_374_182_400, "enabled": 1,
+        },
+        {
+            "storage": "ceph-pool", "type": "rbd", "content": "rootdir,images",
+            "avail": 2_199_023_255_552, "total": 5_497_558_138_880, "enabled": 1,
+        },
+    ],
+    "pve-02": [
+        {
+            "storage": "local-lvm", "type": "lvmthin", "content": "rootdir,images",
+            "avail": 214_748_364_800, "total": 549_755_813_888, "enabled": 1,
+        },
+        {
+            "storage": "local", "type": "dir", "content": "vztmpl,iso,backup,rootdir",
+            "avail": 30_064_771_072, "total": 107_374_182_400, "enabled": 1,
+        },
+    ],
+}
+
 
 def get_nodes() -> List[Dict[str, Any]]:
     if settings.proxmox_mock:
