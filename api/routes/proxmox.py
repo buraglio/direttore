@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""FastAPI router — Proxmox nodes, VMs, containers, task polling."""
+"""FastAPI router — Proxmox nodes, VMs, containers, networks, storage, task polling."""
 
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.proxmox import client as px_client
 from api.proxmox import vms as px_vms
 from api.proxmox import containers as px_ct
 from api.proxmox import templates as px_tmpl
+from api.proxmox import network as px_net
+from api.proxmox import storage as px_stor
 
 router = APIRouter(prefix="/api/proxmox", tags=["proxmox"])
 
@@ -27,6 +29,32 @@ def get_nodes() -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+
+@router.get("/nodes/{node}/networks")
+def get_networks(node: str) -> List[Dict[str, Any]]:
+    """List bridge-type network interfaces available on a node."""
+    try:
+        return px_net.list_networks(node)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
+
+@router.get("/nodes/{node}/storage")
+def get_storage(node: str) -> List[Dict[str, Any]]:
+    """List storage pools on a node that support VM images or CT rootfs."""
+    try:
+        return px_stor.list_storage(node)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
 # VMs
 # ---------------------------------------------------------------------------
 
@@ -36,14 +64,28 @@ def get_vms(node: str) -> List[Dict[str, Any]]:
     return px_vms.list_vms(node)
 
 
+class NICConfig(BaseModel):
+    """Network interface configuration for a QEMU VM."""
+    bridge: str = "vmbr0"
+    model: str = "virtio"           # virtio | e1000 | rtl8139
+    vlan: Optional[int] = Field(None, ge=1, le=4094)  # VLAN tag (None = untagged)
+
+    def to_proxmox_string(self) -> str:
+        s = f"{self.model},bridge={self.bridge}"
+        if self.vlan is not None:
+            s += f",tag={self.vlan}"
+        return s
+
+
 class CreateVMRequest(BaseModel):
     vmid: int
     name: str
     cores: int = 2
-    memory: int = 2048       # MB
+    memory: int = 2048              # MB
     disk: str = "32G"
-    iso: str | None = None   # e.g. "local:iso/ubuntu-22.04.4-live-server-amd64.iso"
-    net0: str = "virtio,bridge=vmbr0"
+    storage: str = "local-lvm"     # storage pool for the primary disk
+    iso: str | None = None          # e.g. "local:iso/ubuntu-22.04.4-live-server-amd64.iso"
+    nics: List[NICConfig] = Field(default_factory=lambda: [NICConfig()])
     ostype: str = "l26"
     start_after_create: bool = False
 
@@ -56,12 +98,16 @@ def create_vm(node: str, req: CreateVMRequest) -> Dict[str, Any]:
         "name": req.name,
         "cores": req.cores,
         "memory": req.memory,
-        "net0": req.net0,
         "ostype": req.ostype,
     }
+    # Attach all NICs (net0, net1, …)
+    for idx, nic in enumerate(req.nics):
+        params[f"net{idx}"] = nic.to_proxmox_string()
+
     if req.iso:
         params["cdrom"] = req.iso
-        params["scsi0"] = f"local-lvm:vm-{req.vmid}-disk-0,size={req.disk}"
+        params["scsi0"] = f"{req.storage}:vm-{req.vmid}-disk-0,size={req.disk}"
+
     try:
         upid = px_vms.create_vm(node, params)
         return {"upid": upid, "node": node, "vmid": req.vmid}
@@ -93,15 +139,33 @@ def get_containers(node: str) -> List[Dict[str, Any]]:
     return px_ct.list_containers(node)
 
 
+class LXCNICConfig(BaseModel):
+    """Network interface configuration for an LXC container."""
+    name: str = "eth0"              # interface name inside container
+    bridge: str = "vmbr0"
+    ip: str = "dhcp"                # "dhcp" or "x.x.x.x/prefix"
+    gw: Optional[str] = None        # default gateway (only for static IP)
+    vlan: Optional[int] = Field(None, ge=1, le=4094)
+
+    def to_proxmox_string(self) -> str:
+        s = f"name={self.name},bridge={self.bridge},ip={self.ip}"
+        if self.gw:
+            s += f",gw={self.gw}"
+        if self.vlan is not None:
+            s += f",tag={self.vlan}"
+        return s
+
+
 class CreateLXCRequest(BaseModel):
     vmid: int
     hostname: str
     cores: int = 1
-    memory: int = 512        # MB
+    memory: int = 512               # MB
     swap: int = 0
-    rootfs: str = "local-lvm:8"  # storage:size_in_GB
-    template: str            # e.g. "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
-    net0: str = "name=eth0,bridge=vmbr0,ip=dhcp"
+    storage: str = "local-lvm"     # storage pool for rootfs
+    disk_size: int = 8              # GB
+    template: str                   # e.g. "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.gz"
+    nics: List[LXCNICConfig] = Field(default_factory=lambda: [LXCNICConfig()])
     password: str = "changeme"
     unprivileged: bool = True
     start_after_create: bool = True
@@ -116,13 +180,16 @@ def create_container(node: str, req: CreateLXCRequest) -> Dict[str, Any]:
         "cores": req.cores,
         "memory": req.memory,
         "swap": req.swap,
-        "rootfs": req.rootfs,
+        "rootfs": f"{req.storage}:{req.disk_size}",
         "ostemplate": req.template,
-        "net0": req.net0,
         "password": req.password,
         "unprivileged": 1 if req.unprivileged else 0,
         "start": 1 if req.start_after_create else 0,
     }
+    # Attach all NICs (net0, net1, …)
+    for idx, nic in enumerate(req.nics):
+        params[f"net{idx}"] = nic.to_proxmox_string()
+
     try:
         upid = px_ct.create_container(node, params)
         return {"upid": upid, "node": node, "vmid": req.vmid}

@@ -37,12 +37,19 @@ Real-time cluster overview — one card per Proxmox node showing CPU, RAM, and d
 Browse all VMs and LXC containers across nodes. Start, stop, and delete resources directly from the table.
 
 ### Provision Wizard
-5-step wizard to provision a new VM or LXC container:
+6-step wizard to provision a new VM or LXC container:
 1. **Type** — choose VM (QEMU/KVM) or LXC Container, select target node
 2. **Template** — select ISO or container template from node storage
-3. **Resources** — set name, VMID, CPU, RAM, disk
-4. **Review** — confirm before submit
-5. **Progress** — live task progress bar polling the Proxmox UPID
+3. **Resources** — set name, VMID, CPU cores, RAM, disk size
+4. **Network & Storage** — configure storage pool and network interfaces:
+   - **Storage**: select from available Proxmox storage pools (shows type and free space)
+   - **NICs**: add up to 8 network interfaces per VM/LXC — each with:
+     - Bridge selection (live list from the node's configured bridges)
+     - Optional VLAN ID (1–4094; empty = untagged)
+     - NIC model (VMs: VirtIO / E1000 / RTL8139)
+     - IP address mode (LXC: `dhcp` or static CIDR)
+5. **Review** — confirm all settings including per-NIC summary table
+6. **Progress** — live task progress bar polling the Proxmox UPID
 
 ### Reservation Calendar
 FullCalendar week/month/day view. Click any time slot to reserve a resource window. Conflict detection prevents double-booking the same node.
@@ -140,14 +147,55 @@ Frontend available at **http://localhost:5173**
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/proxmox/nodes` | List nodes with CPU/RAM/disk stats |
+| `GET` | `/api/proxmox/nodes/{node}/networks` | List bridge interfaces on a node |
+| `GET` | `/api/proxmox/nodes/{node}/storage` | List storage pools that support VM/CT disks |
 | `GET` | `/api/proxmox/nodes/{node}/vms` | List QEMU VMs |
-| `POST` | `/api/proxmox/nodes/{node}/vms` | Create a VM |
+| `POST` | `/api/proxmox/nodes/{node}/vms` | Create a VM (supports multi-NIC, VLAN, storage selection) |
 | `POST` | `/api/proxmox/nodes/{node}/vms/{vmid}/{action}` | start / stop / reboot / shutdown / delete |
 | `GET` | `/api/proxmox/nodes/{node}/lxc` | List LXC containers |
-| `POST` | `/api/proxmox/nodes/{node}/lxc` | Create a container |
+| `POST` | `/api/proxmox/nodes/{node}/lxc` | Create a container (supports multi-NIC, VLAN, storage selection) |
 | `POST` | `/api/proxmox/nodes/{node}/lxc/{vmid}/{action}` | start / stop / reboot / shutdown / delete |
 | `GET` | `/api/proxmox/nodes/{node}/templates` | List available ISOs and templates |
 | `GET` | `/api/proxmox/tasks/{node}/{upid}` | Poll task status by UPID |
+
+#### VM creation request body (`POST /api/proxmox/nodes/{node}/vms`)
+
+```json
+{
+  "vmid": 1042,
+  "name": "my-vm",
+  "cores": 2,
+  "memory": 2048,
+  "disk": "32G",
+  "storage": "local-lvm",
+  "iso": "local:iso/ubuntu-22.04.4-live-server-amd64.iso",
+  "nics": [
+    { "bridge": "vmbr0", "model": "virtio", "vlan": null },
+    { "bridge": "vmbr1", "model": "e1000", "vlan": 100 }
+  ]
+}
+```
+
+#### LXC creation request body (`POST /api/proxmox/nodes/{node}/lxc`)
+
+```json
+{
+  "vmid": 3001,
+  "hostname": "my-container",
+  "cores": 1,
+  "memory": 512,
+  "storage": "local-lvm",
+  "disk_size": 8,
+  "template": "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.gz",
+  "nics": [
+    { "name": "eth0", "bridge": "vmbr0", "ip": "dhcp", "vlan": null },
+    { "name": "eth1", "bridge": "vmbr1", "ip": "10.10.100.5/24", "gw": "10.10.100.1", "vlan": 200 }
+  ],
+  "password": "changeme",
+  "unprivileged": true,
+  "start_after_create": true
+}
+```
 
 ### Reservation Endpoints
 
@@ -233,12 +281,14 @@ direttore/
 │   ├── db.py                 # Async SQLAlchemy engine
 │   ├── models.py             # Reservation, ResourcePool ORM models
 │   ├── proxmox/
-│   │   ├── client.py         # proxmoxer wrapper + mock data
+│   │   ├── client.py         # proxmoxer wrapper + mock data (nodes, VMs, LXC, networks, storage)
 │   │   ├── vms.py            # QEMU VM CRUD
 │   │   ├── containers.py     # LXC container CRUD
-│   │   └── templates.py      # ISO/template listing
+│   │   ├── templates.py      # ISO/template listing
+│   │   ├── network.py        # Bridge interface listing
+│   │   └── storage.py        # Storage pool listing
 │   └── routes/
-│       ├── proxmox.py        # /api/proxmox/* routes
+│       ├── proxmox.py        # /api/proxmox/* routes (incl. /networks, /storage)
 │       ├── reservations.py   # /api/reservations/* routes
 │       └── inventory.py      # /api/inventory/* routes
 ├── frontend/                 # React + Vite SPA
