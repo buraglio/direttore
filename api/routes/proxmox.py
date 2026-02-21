@@ -110,7 +110,7 @@ class NICConfig(BaseModel):
         """
         parts: list[str] = []
         # Include ip only when it looks like a real static address (contains '/')
-        if self.ip and "/" in (self.ip or ""):
+        if self.ip and "/" in self.ip:
             parts.append(f"ip={self.ip}")
         if self.gw and parts:          # gateway only meaningful with a static ip
             parts.append(f"gw={self.gw}")
@@ -150,18 +150,11 @@ def create_vm(node: str, req: CreateVMRequest) -> Dict[str, Any]:
         "memory": req.memory,
         "ostype": req.ostype,
     }
-    # Attach all NICs (net0, net1, …)
-    dns_servers: list[str] = []
+    # Attach NICs (net0, net1, …). ipconfig{n} is omitted for VMs — it is a
+    # cloud-init-only parameter and causes Proxmox to reject creation requests
+    # for ISO-based VMs. nameserver is also LXC-only for the same reason.
     for idx, nic in enumerate(req.nics):
         params[f"net{idx}"] = nic.to_proxmox_net_string()
-        ipcfg = nic.to_proxmox_ipconfig_string()
-        if ipcfg:
-            params[f"ipconfig{idx}"] = ipcfg
-        if nic.dns:
-            dns_servers.extend(nic.dns.split())
-
-    if dns_servers:
-        params["nameserver"] = " ".join(dict.fromkeys(dns_servers))  # deduplicated
 
     if req.iso:
         params["cdrom"] = req.iso
