@@ -9,12 +9,14 @@ import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import {
     IconServer, IconBox, IconCheck, IconX, IconRocket,
-    IconPlus, IconTrash, IconNetwork, IconDatabase,
+    IconPlus, IconTrash, IconNetwork, IconDatabase, IconCloud,
 } from '@tabler/icons-react';
 import {
     getNodes, getTemplates, getNetworks, getStorage,
     createVM, createContainer, pollTask,
 } from '../api/proxmox';
+import NetBoxNicPicker from '../components/NetBoxNicPicker';
+
 
 const VMID_DEFAULT = 1000 + Math.floor(Math.random() * 8000);
 
@@ -29,7 +31,7 @@ function bytesToGB(bytes) {
 }
 
 // ── NIC card component ────────────────────────────────────────────────────────
-function NicCard({ nic, index, onUpdate, onRemove, canRemove, bridgeOptions, isVM }) {
+function NicCard({ nic, index, onUpdate, onRemove, canRemove, bridgeOptions, isVM, onPickNetBox }) {
     return (
         <Paper p="md" radius="md" withBorder style={{ borderColor: 'var(--border)', background: 'var(--surface2)' }}>
             <Group justify="space-between" mb="sm">
@@ -46,6 +48,11 @@ function NicCard({ nic, index, onUpdate, onRemove, canRemove, bridgeOptions, isV
                         </ActionIcon>
                     </Tooltip>
                 )}
+                <Tooltip label="Populate from NetBox">
+                    <ActionIcon color="cyan" variant="subtle" size="sm" onClick={onPickNetBox}>
+                        <IconCloud size={14} />
+                    </ActionIcon>
+                </Tooltip>
             </Group>
 
             {/* Row 1: Bridge / VLAN / NIC model */}
@@ -134,6 +141,7 @@ export default function Provision() {
     const [upid, setUpid] = useState(null);
     const [taskStatus, setTaskStatus] = useState(null);
     const [progress, setProgress] = useState(0);
+    const [pickerNic, setPickerNic] = useState(null); // index of NIC being edited via NetBox
     const pollRef = useRef(null);
 
     const nodesQ = useQuery({ queryKey: ['nodes'], queryFn: getNodes });
@@ -304,6 +312,14 @@ export default function Provision() {
 
     const removeNic = (idx) => {
         form.setFieldValue('nics', form.values.nics.filter((_, i) => i !== idx));
+    };
+
+    // Apply a partial NIC patch coming back from the NetBox picker
+    const applyNetBoxPick = (patch) => {
+        if (pickerNic === null) return;
+        const next = [...form.values.nics];
+        next[pickerNic] = { ...next[pickerNic], ...patch };
+        form.setFieldValue('nics', next);
     };
 
     // ── Review summary rows ───────────────────────────────────────────────────
@@ -477,6 +493,7 @@ export default function Provision() {
                                         canRemove={form.values.nics.length > 1}
                                         bridgeOptions={bridgeOptions.length ? bridgeOptions : [{ value: nic.bridge, label: nic.bridge }]}
                                         isVM={type === 'vm'}
+                                        onPickNetBox={() => setPickerNic(idx)}
                                     />
                                 ))}
                             </Stack>
@@ -602,6 +619,14 @@ export default function Provision() {
                     </Stack>
                 )}
             </Paper>
+
+            {/* NetBox NIC picker modal */}
+            <NetBoxNicPicker
+                opened={pickerNic !== null}
+                onClose={() => setPickerNic(null)}
+                onApply={applyNetBoxPick}
+                nicIndex={pickerNic ?? 0}
+            />
         </Box>
     );
 }

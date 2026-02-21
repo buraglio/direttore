@@ -47,7 +47,9 @@ Browse all VMs and LXC containers across nodes. Start, stop, and delete resource
      - Bridge selection (live list from the node's configured bridges)
      - Optional VLAN ID (1–4094; empty = untagged)
      - NIC model (VMs: VirtIO / E1000 / RTL8139)
-     - IP address mode (LXC: `dhcp` or static CIDR)
+     - Dual-stack IP: **IPv4 / CIDR** (or `dhcp`) + **IPv6 / Prefix** (or `auto` / `dhcp6`)
+     - Default gateways (IPv4 / IPv6) and DNS servers
+     - ☁ **Populate from NetBox**: Integrates with your NetBox instance to provision IPs, Prefix gateways, and VLANs directly into the wizard.
 5. **Review** — confirm all settings including per-NIC summary table
 6. **Progress** — live task progress bar polling the Proxmox UPID
 
@@ -171,7 +173,7 @@ Frontend available at **http://localhost:5173**
   "iso": "local:iso/ubuntu-22.04.4-live-server-amd64.iso",
   "nics": [
     { "bridge": "vmbr0", "model": "virtio", "vlan": null },
-    { "bridge": "vmbr1", "model": "e1000", "vlan": 100 }
+    { "bridge": "vmbr1", "model": "e1000", "vlan": 100, "ip": "10.0.0.5/24", "gw": "10.0.0.1", "ip6": "2001:db8::5/64", "dns": "1.1.1.1 8.8.8.8" }
   ]
 }
 ```
@@ -188,8 +190,8 @@ Frontend available at **http://localhost:5173**
   "disk_size": 8,
   "template": "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.gz",
   "nics": [
-    { "name": "eth0", "bridge": "vmbr0", "ip": "dhcp", "vlan": null },
-    { "name": "eth1", "bridge": "vmbr1", "ip": "10.10.100.5/24", "gw": "10.10.100.1", "vlan": 200 }
+    { "name": "eth0", "bridge": "vmbr0", "ip": "dhcp", "ip6": "auto", "vlan": null },
+    { "name": "eth1", "bridge": "vmbr1", "ip": "10.10.100.5/24", "gw": "10.10.100.1", "ip6": "2001:db8::100:5/64", "gw6": "2001:db8::100:1", "dns": "1.1.1.1 2606:4700:4700::1111", "vlan": 200 }
   ],
   "password": "changeme",
   "unprivileged": true,
@@ -212,8 +214,11 @@ Frontend available at **http://localhost:5173**
 
 | Method | Path | Description |
 |---|---|---|
+| `GET` | `/api/inventory/netbox-status` | Quick reachability check |
 | `GET` | `/api/inventory/devices` | Proxy NetBox device list |
-| `GET` | `/api/inventory/prefixes` | Proxy NetBox IP prefix list |
+| `GET` | `/api/inventory/ip-addresses` | IP addresses with dual-stack and DNS info |
+| `GET` | `/api/inventory/prefixes` | IP prefixes with gateway and DNS hints |
+| `GET` | `/api/inventory/vlans` | VLANs list |
 
 ---
 
