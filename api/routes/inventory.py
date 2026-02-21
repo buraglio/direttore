@@ -91,35 +91,67 @@ def _slim_ip(addr: Dict[str, Any], gateway: Optional[str]) -> Dict[str, Any]:
     }
 
 
-async def _fetch_gateway_for(address: str, client: httpx.AsyncClient) -> Optional[str]:
+def _gateway_from_prefix(prefix: Dict[str, Any]) -> Optional[str]:
+    """Extract a gateway value from a prefix object's custom_fields or description."""
+    cf = prefix.get("custom_fields") or {}
+    for key in ("gateway", "default_gateway", "gw"):
+        if cf.get(key):
+            return str(cf[key])
+    desc = prefix.get("description") or ""
+    if desc and "/" not in desc and ("." in desc or ":" in desc):
+        return desc.strip()
+    return None
+
+
+async def _bulk_prefix_gateway_map(
+    client: httpx.AsyncClient,
+    family: Optional[int] = None,
+) -> Dict[str, Optional[str]]:
     """
-    Best-effort: find the gateway for an address by querying its parent prefix.
-    Checks custom_fields.gateway first, then falls back to the prefix description.
+    Fetch all prefixes in one call and return a dict mapping prefix CIDR → gateway.
+    Used to avoid N sequential gateway lookups when enriching IP addresses.
     """
+    params: Dict[str, Any] = {"limit": 500}
+    if family:
+        params["family"] = family
     try:
         r = await client.get(
             f"{settings.netbox_url}/api/ipam/prefixes/",
-            params={"contains": address},
+            params=params,
             headers=_nb_headers(),
         )
         r.raise_for_status()
-        results = r.json().get("results", [])
-        if not results:
-            return None
-        # Narrowest-match prefix first (NetBox returns longest-match first)
-        prefix = results[0]
-        cf = prefix.get("custom_fields") or {}
-        # Try common custom field names for gateway
-        for key in ("gateway", "default_gateway", "gw"):
-            if cf.get(key):
-                return str(cf[key])
-        # Fall back to description (some orgs put GW there)
-        desc = prefix.get("description") or ""
-        if desc and "/" not in desc and "." in desc:
-            return desc.strip()
-        return None
+        return {
+            p["prefix"]: _gateway_from_prefix(p)
+            for p in r.json().get("results", [])
+            if p.get("prefix")
+        }
     except Exception:
+        return {}
+
+
+def _match_gateway(address: str, prefix_gw_map: Dict[str, Optional[str]]) -> Optional[str]:
+    """
+    In-process longest-prefix match: given an IP address (no mask) find the
+    most specific prefix from prefix_gw_map and return its gateway.
+    Falls back to None if no match or no gateway stored.
+    """
+    import ipaddress
+    try:
+        ip_obj = ipaddress.ip_address(address)
+    except ValueError:
         return None
+    best: Optional[str] = None
+    best_len = -1
+    for cidr, gw in prefix_gw_map.items():
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+            if ip_obj in net and net.prefixlen > best_len:
+                best = gw
+                best_len = net.prefixlen
+        except ValueError:
+            continue
+    return best
 
 
 @router.get("/ip-addresses")
@@ -128,11 +160,11 @@ async def list_ip_addresses(
     status: Optional[str] = Query(None, description="Filter by status, e.g. active"),
     prefix: Optional[str] = Query(None, description="Filter by parent prefix (CIDR)"),
     dns_name: Optional[str] = Query(None, description="Filter by DNS name (contains)"),
-    limit: int = Query(200, le=500),
+    limit: int = Query(100, le=500),
 ) -> List[Dict[str, Any]]:
     """
-    Return a slim list of NetBox IP addresses, enriched with a best-effort
-    prefix_gateway field derived from the parent prefix.
+    Return a slim list of NetBox IP addresses enriched with a best-effort
+    prefix_gateway via a single bulk prefix fetch (no per-address HTTP calls).
     """
     params: Dict[str, Any] = {"limit": limit}
     if family is not None:
@@ -142,24 +174,27 @@ async def list_ip_addresses(
     if prefix:
         params["parent"] = prefix
     if dns_name:
-        params["dns_name__ic"] = dns_name  # case-insensitive contains
+        params["dns_name__ic"] = dns_name
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            r = await client.get(
-                f"{settings.netbox_url}/api/ipam/ip-addresses/",
-                params=params,
-                headers=_nb_headers(),
+            # Run IP fetch and prefix map fetch concurrently
+            import asyncio
+            addrs_resp, prefix_gw_map = await asyncio.gather(
+                client.get(
+                    f"{settings.netbox_url}/api/ipam/ip-addresses/",
+                    params=params,
+                    headers=_nb_headers(),
+                ),
+                _bulk_prefix_gateway_map(client, family),
             )
-            r.raise_for_status()
-            addrs = r.json().get("results", [])
+            addrs_resp.raise_for_status()
+            addrs = addrs_resp.json().get("results", [])
 
-            # Enrich each address with a gateway from its parent prefix.
-            # We batch the gateway lookups but cap to avoid hammering NetBox.
             results: List[Dict[str, Any]] = []
             for addr in addrs:
-                raw_address = addr.get("address", "").split("/")[0]
-                gw = await _fetch_gateway_for(raw_address, client)
+                raw_ip = (addr.get("address") or "").split("/")[0]
+                gw = _match_gateway(raw_ip, prefix_gw_map)
                 results.append(_slim_ip(addr, gw))
             return results
     except httpx.HTTPError as e:
