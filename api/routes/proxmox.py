@@ -15,6 +15,18 @@ from api.proxmox import storage as px_stor
 router = APIRouter(prefix="/api/proxmox", tags=["proxmox"])
 
 
+def _proxmox_error(e: Exception) -> str:
+    """Extract a readable error message from a proxmoxer or generic exception."""
+    # proxmoxer wraps HTTP errors — the response body is usually in str(e)
+    msg = str(e)
+    # Try to pull Proxmox's JSON "errors" or "message" field out if present
+    import re
+    m = re.search(r'"errors":\s*(\{[^}]+\})', msg)
+    if m:
+        return f"Proxmox error: {m.group(1)}"
+    return msg
+
+
 # ---------------------------------------------------------------------------
 # Nodes
 # ---------------------------------------------------------------------------
@@ -84,13 +96,27 @@ class NICConfig(BaseModel):
         return s
 
     def to_proxmox_ipconfig_string(self) -> Optional[str]:
-        """Return the ipconfig{n} parameter value, or None if no IP config set."""
+        """
+        Return the ipconfig{n} value for cloud-init VMs, or None.
+
+        Only populated when the user explicitly sets a static IP or IPv6
+        address.  We deliberately skip ip='dhcp' here because:
+          - ISO-based VMs have no cloud-init drive and Proxmox rejects the param.
+          - Cloud-init VMs that want DHCP should leave the field blank (Proxmox
+            defaults to DHCP when no ipconfig is provided).
+        Callers that genuinely want to pass dhcp via cloud-init can set
+        ip='dhcp' and gw or ip6 alongside it; without at least a gateway or
+        IPv6 address the field is useless anyway.
+        """
         parts: list[str] = []
-        if self.ip:
+        # Include ip only when it looks like a real static address (contains '/')
+        if self.ip and "/" in (self.ip or ""):
             parts.append(f"ip={self.ip}")
-        if self.gw:
+        if self.gw and parts:          # gateway only meaningful with a static ip
             parts.append(f"gw={self.gw}")
-        if self.ip6:
+        if self.ip6 and self.ip6 not in ("auto", "dhcp6"):
+            parts.append(f"ip6={self.ip6}")
+        elif self.ip6 in ("auto", "dhcp6"):
             parts.append(f"ip6={self.ip6}")
         if self.gw6:
             parts.append(f"gw6={self.gw6}")
@@ -145,7 +171,7 @@ def create_vm(node: str, req: CreateVMRequest) -> Dict[str, Any]:
         upid = px_vms.create_vm(node, params)
         return {"upid": upid, "node": node, "vmid": req.vmid}
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=_proxmox_error(e))
 
 
 @router.post("/nodes/{node}/vms/{vmid}/{action}", status_code=202)
@@ -240,7 +266,7 @@ def create_container(node: str, req: CreateLXCRequest) -> Dict[str, Any]:
         upid = px_ct.create_container(node, params)
         return {"upid": upid, "node": node, "vmid": req.vmid}
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=_proxmox_error(e))
 
 
 @router.post("/nodes/{node}/lxc/{vmid}/{action}", status_code=202)
