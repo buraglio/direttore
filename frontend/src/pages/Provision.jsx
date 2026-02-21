@@ -47,7 +47,9 @@ function NicCard({ nic, index, onUpdate, onRemove, canRemove, bridgeOptions, isV
                     </Tooltip>
                 )}
             </Group>
-            <Group grow gap="sm">
+
+            {/* Row 1: Bridge / VLAN / NIC model */}
+            <Group grow gap="sm" mb="sm">
                 <Select
                     label="Bridge"
                     data={bridgeOptions}
@@ -74,16 +76,52 @@ function NicCard({ nic, index, onUpdate, onRemove, canRemove, bridgeOptions, isV
                         onChange={(v) => onUpdate({ ...nic, model: v })}
                     />
                 )}
-                {!isVM && (
-                    <TextInput
-                        label="IP / CIDR"
-                        description='e.g. "dhcp" or "10.0.0.5/24"'
-                        placeholder="dhcp"
-                        value={nic.ip}
-                        onChange={(e) => onUpdate({ ...nic, ip: e.currentTarget.value })}
-                    />
-                )}
             </Group>
+
+            {/* Row 2: IPv4 address + IPv4 default gateway */}
+            <Group grow gap="sm" mb="sm">
+                <TextInput
+                    label="IPv4 / CIDR"
+                    description='e.g. "dhcp" or "10.0.0.5/24"'
+                    placeholder="dhcp"
+                    value={nic.ip}
+                    onChange={(e) => onUpdate({ ...nic, ip: e.currentTarget.value })}
+                />
+                <TextInput
+                    label="IPv4 Default Gateway"
+                    description="Leave empty for none"
+                    placeholder="10.0.0.1"
+                    value={nic.gw}
+                    onChange={(e) => onUpdate({ ...nic, gw: e.currentTarget.value })}
+                />
+            </Group>
+
+            {/* Row 3: IPv6 address + IPv6 default gateway */}
+            <Group grow gap="sm" mb="sm">
+                <TextInput
+                    label="IPv6 / Prefix"
+                    description='e.g. "auto" or "2001:db8::5/64"'
+                    placeholder="auto"
+                    value={nic.ip6}
+                    onChange={(e) => onUpdate({ ...nic, ip6: e.currentTarget.value })}
+                />
+                <TextInput
+                    label="IPv6 Default Gateway"
+                    description="Leave empty for none"
+                    placeholder="2001:db8::1"
+                    value={nic.gw6}
+                    onChange={(e) => onUpdate({ ...nic, gw6: e.currentTarget.value })}
+                />
+            </Group>
+
+            {/* Row 4: DNS servers */}
+            <TextInput
+                label="DNS Servers"
+                description="Space-separated, e.g. 1.1.1.1 2606:4700:4700::1111"
+                placeholder="1.1.1.1 8.8.8.8"
+                value={nic.dns}
+                onChange={(e) => onUpdate({ ...nic, dns: e.currentTarget.value })}
+            />
         </Paper>
     );
 }
@@ -117,10 +155,17 @@ export default function Provision() {
         enabled: !!node && step === 3,
     });
 
-    // Default NIC shape differs by type
-    const defaultNic = (t) => t === 'vm'
-        ? { bridge: 'vmbr0', vlan: null, model: 'virtio' }
-        : { bridge: 'vmbr0', vlan: null, ip: 'dhcp', gw: '' };
+    // Default NIC shape — shared fields for both VM and LXC
+    const defaultNic = (t) => ({
+        bridge: 'vmbr0',
+        vlan: null,
+        model: t === 'vm' ? 'virtio' : undefined,
+        ip: 'dhcp',
+        gw: '',
+        ip6: '',
+        gw6: '',
+        dns: '',
+    });
 
     const form = useForm({
         initialValues: {
@@ -476,10 +521,15 @@ export default function Provision() {
                             <Table withRowBorders={false} fz="sm">
                                 <Table.Thead>
                                     <Table.Tr>
-                                        <Table.Th>Interface</Table.Th>
+                                        <Table.Th>Iface</Table.Th>
                                         <Table.Th>Bridge</Table.Th>
                                         <Table.Th>VLAN</Table.Th>
-                                        <Table.Th>{type === 'vm' ? 'Model' : 'IP'}</Table.Th>
+                                        {type === 'vm' && <Table.Th>Model</Table.Th>}
+                                        <Table.Th>IPv4</Table.Th>
+                                        <Table.Th>GW4</Table.Th>
+                                        <Table.Th>IPv6</Table.Th>
+                                        <Table.Th>GW6</Table.Th>
+                                        <Table.Th>DNS</Table.Th>
                                     </Table.Tr>
                                 </Table.Thead>
                                 <Table.Tbody>
@@ -487,8 +537,13 @@ export default function Provision() {
                                         <Table.Tr key={idx}>
                                             <Table.Td c="dimmed">net{idx}</Table.Td>
                                             <Table.Td fw={500}>{nic.bridge}</Table.Td>
-                                            <Table.Td>{nic.vlan ?? <Text c="dimmed" span>untagged</Text>}</Table.Td>
-                                            <Table.Td>{type === 'vm' ? nic.model : (nic.ip || 'dhcp')}</Table.Td>
+                                            <Table.Td>{nic.vlan ?? <Text c="dimmed" span>—</Text>}</Table.Td>
+                                            {type === 'vm' && <Table.Td>{nic.model}</Table.Td>}
+                                            <Table.Td>{nic.ip || <Text c="dimmed" span>dhcp</Text>}</Table.Td>
+                                            <Table.Td>{nic.gw || <Text c="dimmed" span>—</Text>}</Table.Td>
+                                            <Table.Td>{nic.ip6 || <Text c="dimmed" span>—</Text>}</Table.Td>
+                                            <Table.Td>{nic.gw6 || <Text c="dimmed" span>—</Text>}</Table.Td>
+                                            <Table.Td>{nic.dns || <Text c="dimmed" span>—</Text>}</Table.Td>
                                         </Table.Tr>
                                     ))}
                                 </Table.Tbody>

@@ -69,12 +69,36 @@ class NICConfig(BaseModel):
     bridge: str = "vmbr0"
     model: str = "virtio"           # virtio | e1000 | rtl8139
     vlan: Optional[int] = Field(None, ge=1, le=4094)  # VLAN tag (None = untagged)
+    # IP configuration (used with cloud-init / ipconfig{n})
+    ip: Optional[str] = None        # "dhcp" | "x.x.x.x/prefix"
+    gw: Optional[str] = None        # IPv4 default gateway
+    ip6: Optional[str] = None       # "auto" | "dhcp6" | "x::/prefix"
+    gw6: Optional[str] = None       # IPv6 default gateway
+    dns: Optional[str] = None       # space-separated nameservers
 
-    def to_proxmox_string(self) -> str:
+    def to_proxmox_net_string(self) -> str:
+        """Return the net{n} parameter value for the Proxmox API."""
         s = f"{self.model},bridge={self.bridge}"
         if self.vlan is not None:
             s += f",tag={self.vlan}"
         return s
+
+    def to_proxmox_ipconfig_string(self) -> Optional[str]:
+        """Return the ipconfig{n} parameter value, or None if no IP config set."""
+        parts: list[str] = []
+        if self.ip:
+            parts.append(f"ip={self.ip}")
+        if self.gw:
+            parts.append(f"gw={self.gw}")
+        if self.ip6:
+            parts.append(f"ip6={self.ip6}")
+        if self.gw6:
+            parts.append(f"gw6={self.gw6}")
+        return ",".join(parts) if parts else None
+
+    # Backward-compat alias
+    def to_proxmox_string(self) -> str:
+        return self.to_proxmox_net_string()
 
 
 class CreateVMRequest(BaseModel):
@@ -101,8 +125,17 @@ def create_vm(node: str, req: CreateVMRequest) -> Dict[str, Any]:
         "ostype": req.ostype,
     }
     # Attach all NICs (net0, net1, …)
+    dns_servers: list[str] = []
     for idx, nic in enumerate(req.nics):
-        params[f"net{idx}"] = nic.to_proxmox_string()
+        params[f"net{idx}"] = nic.to_proxmox_net_string()
+        ipcfg = nic.to_proxmox_ipconfig_string()
+        if ipcfg:
+            params[f"ipconfig{idx}"] = ipcfg
+        if nic.dns:
+            dns_servers.extend(nic.dns.split())
+
+    if dns_servers:
+        params["nameserver"] = " ".join(dict.fromkeys(dns_servers))  # deduplicated
 
     if req.iso:
         params["cdrom"] = req.iso
@@ -143,14 +176,21 @@ class LXCNICConfig(BaseModel):
     """Network interface configuration for an LXC container."""
     name: str = "eth0"              # interface name inside container
     bridge: str = "vmbr0"
-    ip: str = "dhcp"                # "dhcp" or "x.x.x.x/prefix"
-    gw: Optional[str] = None        # default gateway (only for static IP)
+    ip: str = "dhcp"                # "dhcp" | "x.x.x.x/prefix"
+    gw: Optional[str] = None        # IPv4 default gateway
+    ip6: Optional[str] = None       # "auto" | "dhcp6" | "x::/prefix"
+    gw6: Optional[str] = None       # IPv6 default gateway
+    dns: Optional[str] = None       # space-separated nameservers
     vlan: Optional[int] = Field(None, ge=1, le=4094)
 
     def to_proxmox_string(self) -> str:
         s = f"name={self.name},bridge={self.bridge},ip={self.ip}"
         if self.gw:
             s += f",gw={self.gw}"
+        if self.ip6:
+            s += f",ip6={self.ip6}"
+        if self.gw6:
+            s += f",gw6={self.gw6}"
         if self.vlan is not None:
             s += f",tag={self.vlan}"
         return s
@@ -186,9 +226,15 @@ def create_container(node: str, req: CreateLXCRequest) -> Dict[str, Any]:
         "unprivileged": 1 if req.unprivileged else 0,
         "start": 1 if req.start_after_create else 0,
     }
-    # Attach all NICs (net0, net1, …)
+    # Attach all NICs (net0, net1, …) and collect DNS
+    dns_servers: list[str] = []
     for idx, nic in enumerate(req.nics):
         params[f"net{idx}"] = nic.to_proxmox_string()
+        if nic.dns:
+            dns_servers.extend(nic.dns.split())
+
+    if dns_servers:
+        params["nameserver"] = " ".join(dict.fromkeys(dns_servers))  # deduplicated
 
     try:
         upid = px_ct.create_container(node, params)
