@@ -338,6 +338,24 @@ pveum aclmod / -user direttore@pve -role DirettoreRole
 
 ---
 
+## Populating NetBox Inventory via SNMP
+
+The `snmp_to_netbox.sh` bash script walks a live network device via SNMP and pushes it into the NetBox model (interfaces, VRFs, VLANs, IPv4, IPv6, Serial Number).
+
+```bash
+# Set your NetBox URL and token in .env or your environment
+# SNMP_COMMUNITY defaults to "public" but can be overridden
+
+# Single device (IPv4, literal IPv6, or DNS hostname)
+./snmp_to_netbox.sh -s "New York" -r "Router" -t "ASR1000" gateway.local "Core Router 1"
+./snmp_to_netbox.sh fd68:1e02:dc1a:ffff::1 "gw.buragl.io"
+
+# Bulk import from CSV
+./snmp_to_netbox.sh -f devices.csv
+```
+
+---
+
 ## Existing Nornir Workflow
 
 The original network automation pipeline is unchanged and can be used alongside the new web UI:
