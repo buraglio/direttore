@@ -40,6 +40,13 @@ if [[ -z "$DEVICE_IP" || -z "$DEVICE_NAME" ]]; then
 fi
 
 # Configuration
+# Load variables from .env if present
+if [[ -f ".env" ]]; then
+  set -a
+  source .env
+  set +a
+fi
+
 : "${NETBOX_URL:?NETBOX_URL environment variable required}"
 : "${NETBOX_TOKEN:?NETBOX_TOKEN environment variable required}"
 SNMP_COMMUNITY="${SNMP_COMMUNITY:-public}"
