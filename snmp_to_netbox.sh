@@ -156,7 +156,7 @@ process_device() {
       --arg site "$SITE_ID" \
       --arg role "$ROLE_ID" \
       --arg type "$TYPE_ID" \
-      '{name: $name, status: $status, device_type: ($type|tonumber), device_role: ($role|tonumber), site: ($site|tonumber)}')
+      '{name: $name, status: $status, device_type: ($type|tonumber), role: ($role|tonumber), site: ($site|tonumber)}')
     
     # Try to create device
     DEVICE_ID=$(nb_api POST dcim/devices "$payload" | jq -r '.id // empty')
