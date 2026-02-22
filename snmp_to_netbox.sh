@@ -35,7 +35,7 @@ fi
 # Load variables from .env if present
 if [ -f ".env" ]; then
   set -a
-  . .env
+  . ./.env
   set +a
 fi
 
