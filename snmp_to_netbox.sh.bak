@@ -203,31 +203,20 @@ process_device() {
     # Example line: IF-MIB::ifDescr.1 = STRING: lo
     if echo "$line" | grep -q 'IF-MIB::ifDescr\.[0-9]* = STRING: .*'; then
       ifIndex=$(echo "$line" | sed 's/.*IF-MIB::ifDescr\.\([0-9]*\).*/\1/')
-      ifName=$(echo "$line" | sed 's/.*STRING: //; s/^"//; s/"$//')
-      
-      # URL-encode the name for the GET request
-      URL_NAME=$(echo "$ifName" | jq -Rr @uri)
+      ifName=$(echo "$line" | sed 's/.*STRING: \(.*\)/\1/')
       
       # Create or update interface in NetBox
       payload=$(jq -n \
         --arg name "$ifName" \
         --arg device_id "$DEVICE_ID" \
-        '{name: $name, device: ($device_id|tonumber), type: "other"}')
-      iface_id=$(nb_api GET dcim/interfaces "?device_id=$DEVICE_ID&name=$URL_NAME" | jq -r '.results[0].id // empty')
+        '{name: $name, device: ($device_id|tonumber)}')
+      iface_id=$(nb_api GET dcim/interfaces "?device_id=$DEVICE_ID&name=$ifName" | jq -r '.results[0].id // empty')
       if [ -z "$iface_id" ]; then
-        resp=$(nb_api POST dcim/interfaces "$payload")
-        if echo "$resp" | jq -e '.id' >/dev/null; then
-          echo "Created interface $ifName"
-        else
-          echo "Failed to create interface $ifName: $resp"
-        fi
+        nb_api POST dcim/interfaces "$payload" > /dev/null
+        echo "Created interface $ifName"
       else
-        resp=$(nb_api PATCH dcim/interfaces/"$iface_id" "$payload")
-        if echo "$resp" | jq -e '.id' >/dev/null; then
-          echo "Updated interface $ifName"
-        else
-          echo "Failed to update interface $ifName: $resp"
-        fi
+        nb_api PATCH dcim/interfaces/"$iface_id" "$payload" > /dev/null
+        echo "Updated interface $ifName"
       fi
     fi
   done
@@ -243,9 +232,7 @@ process_device() {
       
       if echo "$idx_line" | grep -q 'IP-MIB::ipAdEntIfIndex\.[0-9.]* = INTEGER: [0-9]*'; then
         ifIndex=$(echo "$idx_line" | sed 's/.*INTEGER: \([0-9]*\).*/\1/')
-        ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" "IF-MIB::ifDescr.$ifIndex" 2>/dev/null | sed 's/.*STRING: //; s/^"//; s/"$//')
-        
-        URL_NAME=$(echo "$ifName" | jq -Rr @uri)
+        ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" "IF-MIB::ifDescr.$ifIndex" 2>/dev/null | awk -F"STRING: " '{print $2}')
         
         payload=$(jq -n \
           --arg address "$ip/32" \
@@ -253,19 +240,17 @@ process_device() {
           --arg interface "$ifName" \
           '{address: $address, assigned_object_type: "dcim.interface", assigned_object_id: (null), status: "active"}')
         
-        iface_id=$(nb_api GET dcim/interfaces "?device_id=$DEVICE_ID&name=$URL_NAME" | jq -r '.results[0].id // empty')
+        iface_id=$(nb_api GET dcim/interfaces "?device_id=$DEVICE_ID&name=$ifName" | jq -r '.results[0].id // empty')
         if [ -n "$iface_id" ]; then
           payload=$(echo "$payload" | jq ".assigned_object_id = ($iface_id|tonumber)")
           ip_id=$(nb_api GET ipam/ip-addresses "?address=$ip" | jq -r '.results[0].id // empty')
           if [ -z "$ip_id" ]; then
-            resp=$(nb_api POST ipam/ip-addresses "$payload")
+            nb_api POST ipam/ip-addresses "$payload" > /dev/null
             echo "Created IPv4 $ip on $ifName"
           else
-            resp=$(nb_api PATCH ipam/ip-addresses/"$ip_id" "$payload")
+            nb_api PATCH ipam/ip-addresses/"$ip_id" "$payload" > /dev/null
             echo "Updated IPv4 $ip on $ifName"
           fi
-        else
-          echo "Warning: Interface $ifName not found in NetBox for IPv4 $ip"
         fi
       fi
     fi
@@ -282,9 +267,7 @@ process_device() {
       
       if echo "$idx_line" | grep -q 'IPV6-MIB::ipv6IfIndex\.[0-9A-Fa-f:]* = INTEGER: [0-9]*'; then
         ifIndex=$(echo "$idx_line" | sed 's/.*INTEGER: \([0-9]*\).*/\1/')
-        ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" "IF-MIB::ifDescr.$ifIndex" 2>/dev/null | sed 's/.*STRING: //; s/^"//; s/"$//')
-        
-        URL_NAME=$(echo "$ifName" | jq -Rr @uri)
+        ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" "IF-MIB::ifDescr.$ifIndex" 2>/dev/null | awk -F"STRING: " '{print $2}')
         
         payload=$(jq -n \
           --arg address "$ip/128" \
@@ -292,19 +275,17 @@ process_device() {
           --arg interface "$ifName" \
           '{address: $address, assigned_object_type: "dcim.interface", assigned_object_id: (null), status: "active"}')
           
-        iface_id=$(nb_api GET dcim/interfaces "?device_id=$DEVICE_ID&name=$URL_NAME" | jq -r '.results[0].id // empty')
+        iface_id=$(nb_api GET dcim/interfaces "?device_id=$DEVICE_ID&name=$ifName" | jq -r '.results[0].id // empty')
         if [ -n "$iface_id" ]; then
           payload=$(echo "$payload" | jq ".assigned_object_id = ($iface_id|tonumber)")
           ip_id=$(nb_api GET ipam/ip-addresses "?address=$ip" | jq -r '.results[0].id // empty')
           if [ -z "$ip_id" ]; then
-            resp=$(nb_api POST ipam/ip-addresses "$payload")
+            nb_api POST ipam/ip-addresses "$payload" > /dev/null
             echo "Created IPv6 $ip on $ifName"
           else
-            resp=$(nb_api PATCH ipam/ip-addresses/"$ip_id" "$payload")
+            nb_api PATCH ipam/ip-addresses/"$ip_id" "$payload" > /dev/null
             echo "Updated IPv6 $ip on $ifName"
           fi
-        else
-          echo "Warning: Interface $ifName not found in NetBox for IPv6 $ip"
         fi
       fi
     fi
@@ -328,23 +309,17 @@ process_device() {
     echo "$VRFS" | while IFS= read -r line; do
       if echo "$line" | grep -q 'CISCO-VRF-MIB::ciscoVrfName\.[0-9]* = STRING: .*'; then
         vrf_id=$(echo "$line" | sed 's/.*CISCO-VRF-MIB::ciscoVrfName\.\([0-9]*\).*/\1/')
-        vrf_name=$(echo "$line" | sed 's/.*STRING: //; s/^"//; s/"$//')
-        
-        URL_VRF=$(echo "$vrf_name" | jq -Rr @uri)
+        vrf_name=$(echo "$line" | sed 's/.*STRING: \(.*\)/\1/')
         
         payload=$(jq -n \
           --arg name "$vrf_name" \
           '{name: $name, rd: ""}')
-        existing=$(nb_api GET ipam/vrfs "?name=$URL_VRF" | jq -r '.results[0].id // empty')
+        existing=$(nb_api GET ipam/vrfs "?name=$vrf_name" | jq -r '.results[0].id // empty')
         if [ -z "$existing" ]; then
-          resp=$(nb_api POST ipam/vrfs "$payload")
-          if echo "$resp" | jq -e '.id' >/dev/null; then
-            echo "Created VRF $vrf_name"
-          else
-            echo "Failed to create VRF $vrf_name: $resp"
-          fi
+          nb_api POST ipam/vrfs "$payload" > /dev/null
+          echo "Created VRF $vrf_name"
         else
-          resp=$(nb_api PATCH ipam/vrfs/"$existing" "$payload")
+          nb_api PATCH ipam/vrfs/"$existing" "$payload" > /dev/null
           echo "Updated VRF $vrf_name"
         fi
       fi
