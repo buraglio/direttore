@@ -29,7 +29,7 @@
 #   6. Push the collected data to NetBox via its API.
 # ------------------------------------------------------------
 
-set -euo pipefail
+set -eu
 
 DEVICE_IP="${1:-}"
 DEVICE_NAME="${2:-}"
