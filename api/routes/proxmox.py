@@ -202,14 +202,17 @@ class LXCNICConfig(BaseModel):
     dns: Optional[str] = None       # space-separated nameservers
     vlan: Optional[int] = Field(None, ge=1, le=4094)
 
-    def to_proxmox_string(self) -> str:
-        s = f"name={self.name},bridge={self.bridge},ip={self.ip}"
+    def to_proxmox_string(self, iface_index: int = 0) -> str:
+        """Build the Proxmox net{n} string for this LXC NIC."""
+        # Use unique interface names: eth0, eth1, … based on the NIC position
+        iface_name = self.name if iface_index == 0 else f"eth{iface_index}"
+        s = f"name={iface_name},bridge={self.bridge},ip={self.ip}"
         if self.gw:
             s += f",gw={self.gw}"
         if self.ip6:
             s += f",ip6={self.ip6}"
-        if self.gw6:
-            s += f",gw6={self.gw6}"
+            if self.gw6:            # gw6 only meaningful when ip6 is set
+                s += f",gw6={self.gw6}"
         if self.vlan is not None:
             s += f",tag={self.vlan}"
         return s
@@ -248,7 +251,7 @@ def create_container(node: str, req: CreateLXCRequest) -> Dict[str, Any]:
     # Attach all NICs (net0, net1, …) and collect DNS
     dns_servers: list[str] = []
     for idx, nic in enumerate(req.nics):
-        params[f"net{idx}"] = nic.to_proxmox_string()
+        params[f"net{idx}"] = nic.to_proxmox_string(iface_index=idx)
         if nic.dns:
             dns_servers.extend(nic.dns.split())
 

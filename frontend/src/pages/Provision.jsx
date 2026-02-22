@@ -314,319 +314,323 @@ export default function Provision() {
         form.setFieldValue('nics', form.values.nics.filter((_, i) => i !== idx));
     };
 
-    // Apply a partial NIC patch coming back from the NetBox picker
+    // Apply a partial NIC patch coming back from the NetBox picker.
+    // Use per-field path updates (nics.N.field) instead of replacing the whole
+    // nics array — this is more reliable with Mantine's form state tracking and
+    // avoids any stale-closure issue where form.values.nics was captured before
+    // the latest render.
     const applyNetBoxPick = (patch) => {
         if (pickerNic === null) return;
-        const next = [...form.values.nics];
-        next[pickerNic] = { ...next[pickerNic], ...patch };
-        form.setFieldValue('nics', next);
+        Object.entries(patch).forEach(([key, value]) => {
+            form.setFieldValue(`nics.${pickerNic}.${key}`, value);
+        });
     };
 
     // ── Review summary rows ───────────────────────────────────────────────────
     const reviewRows = [
-        ['Type', type === 'vm' ? 'Virtual Machine (QEMU)' : 'LXC Container'],
-        ['Node', node],
-        [type === 'lxc' ? 'Hostname' : 'Name', form.values.name],
-        ['VMID', form.values.vmid],
-        ['CPU', `${form.values.cores} vCPU`],
-        ['RAM', `${form.values.memory} MB`],
-        ['Disk', `${form.values.disk} GB`],
-        ['Storage', form.values.storage],
-        ['Template', form.values.template ? form.values.template.split('/').pop() : 'none'],
-    ];
+            ['Type', type === 'vm' ? 'Virtual Machine (QEMU)' : 'LXC Container'],
+            ['Node', node],
+            [type === 'lxc' ? 'Hostname' : 'Name', form.values.name],
+            ['VMID', form.values.vmid],
+            ['CPU', `${form.values.cores} vCPU`],
+            ['RAM', `${form.values.memory} MB`],
+            ['Disk', `${form.values.disk} GB`],
+            ['Storage', form.values.storage],
+            ['Template', form.values.template ? form.values.template.split('/').pop() : 'none'],
+        ];
 
-    return (
-        <Box>
-            <Title order={2} mb={4} style={{ color: 'var(--text)' }}>Provision Resource</Title>
-            <Text c="dimmed" size="sm" mb="xl">Create a VM or LXC container on a Proxmox node</Text>
+        return (
+            <Box>
+                <Title order={2} mb={4} style={{ color: 'var(--text)' }}>Provision Resource</Title>
+                <Text c="dimmed" size="sm" mb="xl">Create a VM or LXC container on a Proxmox node</Text>
 
-            <Paper p="xl" radius="md" style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxWidth: 780 }}>
-                <Stepper active={step} color="cyan" size="sm" mb="xl">
-                    <Stepper.Step label="Type" description="VM or LXC" />
-                    <Stepper.Step label="Template" description="OS image" />
-                    <Stepper.Step label="Resources" description="CPU / RAM / disk" />
-                    <Stepper.Step label="Network & Storage" description="NICs, VLAN, pool" />
-                    <Stepper.Step label="Review" description="Confirm" />
-                    <Stepper.Step label="Progress" description="Provisioning" />
-                </Stepper>
+                <Paper p="xl" radius="md" style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxWidth: 780 }}>
+                    <Stepper active={step} color="cyan" size="sm" mb="xl">
+                        <Stepper.Step label="Type" description="VM or LXC" />
+                        <Stepper.Step label="Template" description="OS image" />
+                        <Stepper.Step label="Resources" description="CPU / RAM / disk" />
+                        <Stepper.Step label="Network & Storage" description="NICs, VLAN, pool" />
+                        <Stepper.Step label="Review" description="Confirm" />
+                        <Stepper.Step label="Progress" description="Provisioning" />
+                    </Stepper>
 
-                {/* ──────────── Step 0: Type ──────────── */}
-                {step === 0 && (
-                    <Stack gap="md">
-                        <Select label="Proxmox node" data={nodeOptions} value={node} onChange={setActiveNode} />
-                        <Text size="sm" fw={500} mt="xs">Resource type</Text>
-                        <Group grow>
-                            {[
-                                { key: 'vm', Icon: IconServer, label: 'Virtual Machine', sub: 'QEMU/KVM full virtualization' },
-                                { key: 'lxc', Icon: IconBox, label: 'LXC Container', sub: 'Lightweight OS container' },
-                            ].map(({ key, Icon, label, sub }) => (
-                                <Paper key={key} p="md" radius="md" withBorder onClick={() => setType(key)}
-                                    style={{
-                                        cursor: 'pointer',
-                                        border: `2px solid ${type === key ? 'var(--cyan)' : 'var(--border)'}`,
-                                        background: type === key ? 'rgba(0,188,212,0.07)' : 'var(--surface2)',
-                                        transition: 'all 0.15s',
-                                    }}>
-                                    <Group gap="xs" justify="center">
-                                        <Icon size={24} color={type === key ? 'var(--cyan)' : 'var(--muted)'} />
-                                        <Stack gap={0}>
-                                            <Text size="sm" fw={600}>{label}</Text>
-                                            <Text size="xs" c="dimmed">{sub}</Text>
-                                        </Stack>
-                                    </Group>
-                                </Paper>
-                            ))}
-                        </Group>
-                        <Group justify="flex-end" mt="md">
-                            <Button color="cyan" onClick={() => setStep(1)}>Next</Button>
-                        </Group>
-                    </Stack>
-                )}
-
-                {/* ──────────── Step 1: Template ──────────── */}
-                {step === 1 && (
-                    <Stack gap="md">
-                        <Select
-                            label={type === 'lxc' ? 'Container Template' : 'ISO Image'}
-                            description={type === 'lxc' ? 'LXC .tar.gz template' : 'Bootable ISO'}
-                            data={templateOptions}
-                            value={form.values.template}
-                            onChange={(v) => form.setFieldValue('template', v)}
-                            searchable
-                            placeholder={templatesQ.isLoading ? 'Loading…' : 'Select a template'}
-                        />
-                        {templateOptions.length === 0 && !templatesQ.isLoading && (
-                            <Alert color="yellow" size="sm">
-                                No {type === 'lxc' ? 'container templates' : 'ISOs'} found on {node}.
-                                In mock mode this is expected.
-                            </Alert>
-                        )}
-                        <Group justify="space-between" mt="md">
-                            <Button variant="subtle" onClick={() => setStep(0)}>Back</Button>
-                            <Button color="cyan" onClick={() => setStep(2)}>Next</Button>
-                        </Group>
-                    </Stack>
-                )}
-
-                {/* ──────────── Step 2: Resources ──────────── */}
-                {step === 2 && (
-                    <Stack gap="md">
-                        <Group grow>
-                            <TextInput
-                                label={type === 'lxc' ? 'Hostname' : 'VM Name'}
-                                placeholder={type === 'lxc' ? 'my-container' : 'my-vm'}
-                                {...form.getInputProps('name')}
-                            />
-                            <NumberInput label="VMID" min={100} max={99999} {...form.getInputProps('vmid')} />
-                        </Group>
-                        <Group grow>
-                            <NumberInput label="CPU cores" min={1} max={64} {...form.getInputProps('cores')} />
-                            <NumberInput label="RAM (MB)" min={256} step={256} max={131072} {...form.getInputProps('memory')} />
-                        </Group>
-                        <NumberInput label="Root disk (GB)" min={1} max={8192} {...form.getInputProps('disk')} />
-                        {type === 'lxc' && (
-                            <TextInput label="Root password" type="password" {...form.getInputProps('password')} />
-                        )}
-                        <Group justify="space-between" mt="md">
-                            <Button variant="subtle" onClick={() => setStep(1)}>Back</Button>
-                            <Button color="cyan" disabled={!form.values.name.trim()} onClick={() => setStep(3)}>Next</Button>
-                        </Group>
-                    </Stack>
-                )}
-
-                {/* ──────────── Step 3: Network & Storage ──────────── */}
-                {step === 3 && (
-                    <Stack gap="lg">
-                        {/* Storage */}
-                        <Box>
-                            <Group gap="xs" mb="sm">
-                                <ThemeIcon size="sm" color="teal" variant="light">
-                                    <IconDatabase size={12} />
-                                </ThemeIcon>
-                                <Text size="sm" fw={600}>Storage Pool</Text>
+                    {/* ──────────── Step 0: Type ──────────── */}
+                    {step === 0 && (
+                        <Stack gap="md">
+                            <Select label="Proxmox node" data={nodeOptions} value={node} onChange={setActiveNode} />
+                            <Text size="sm" fw={500} mt="xs">Resource type</Text>
+                            <Group grow>
+                                {[
+                                    { key: 'vm', Icon: IconServer, label: 'Virtual Machine', sub: 'QEMU/KVM full virtualization' },
+                                    { key: 'lxc', Icon: IconBox, label: 'LXC Container', sub: 'Lightweight OS container' },
+                                ].map(({ key, Icon, label, sub }) => (
+                                    <Paper key={key} p="md" radius="md" withBorder onClick={() => setType(key)}
+                                        style={{
+                                            cursor: 'pointer',
+                                            border: `2px solid ${type === key ? 'var(--cyan)' : 'var(--border)'}`,
+                                            background: type === key ? 'rgba(0,188,212,0.07)' : 'var(--surface2)',
+                                            transition: 'all 0.15s',
+                                        }}>
+                                        <Group gap="xs" justify="center">
+                                            <Icon size={24} color={type === key ? 'var(--cyan)' : 'var(--muted)'} />
+                                            <Stack gap={0}>
+                                                <Text size="sm" fw={600}>{label}</Text>
+                                                <Text size="xs" c="dimmed">{sub}</Text>
+                                            </Stack>
+                                        </Group>
+                                    </Paper>
+                                ))}
                             </Group>
+                            <Group justify="flex-end" mt="md">
+                                <Button color="cyan" onClick={() => setStep(1)}>Next</Button>
+                            </Group>
+                        </Stack>
+                    )}
+
+                    {/* ──────────── Step 1: Template ──────────── */}
+                    {step === 1 && (
+                        <Stack gap="md">
                             <Select
-                                label="Disk storage"
-                                description="Where the VM disk or LXC rootfs will be created"
-                                data={storageOptions}
-                                value={form.values.storage}
-                                onChange={(v) => form.setFieldValue('storage', v)}
-                                placeholder={storageQ.isLoading ? 'Loading storage…' : 'Select storage pool'}
+                                label={type === 'lxc' ? 'Container Template' : 'ISO Image'}
+                                description={type === 'lxc' ? 'LXC .tar.gz template' : 'Bootable ISO'}
+                                data={templateOptions}
+                                value={form.values.template}
+                                onChange={(v) => form.setFieldValue('template', v)}
                                 searchable
+                                placeholder={templatesQ.isLoading ? 'Loading…' : 'Select a template'}
                             />
-                            {storageOptions.length === 0 && !storageQ.isLoading && (
-                                <Alert color="yellow" size="sm" mt="xs">
-                                    No storage pools found for this node. Check the API or mock data.
+                            {templateOptions.length === 0 && !templatesQ.isLoading && (
+                                <Alert color="yellow" size="sm">
+                                    No {type === 'lxc' ? 'container templates' : 'ISOs'} found on {node}.
+                                    In mock mode this is expected.
                                 </Alert>
                             )}
-                        </Box>
-
-                        <Divider />
-
-                        {/* NICs */}
-                        <Box>
-                            <Group gap="xs" mb="sm">
-                                <ThemeIcon size="sm" color="cyan" variant="light">
-                                    <IconNetwork size={12} />
-                                </ThemeIcon>
-                                <Text size="sm" fw={600}>Network Interfaces</Text>
-                                <Badge size="xs" variant="light" color="gray">{form.values.nics.length} / 8</Badge>
+                            <Group justify="space-between" mt="md">
+                                <Button variant="subtle" onClick={() => setStep(0)}>Back</Button>
+                                <Button color="cyan" onClick={() => setStep(2)}>Next</Button>
                             </Group>
+                        </Stack>
+                    )}
 
-                            {networksQ.isLoading && (
-                                <Text size="xs" c="dimmed">Loading bridges…</Text>
+                    {/* ──────────── Step 2: Resources ──────────── */}
+                    {step === 2 && (
+                        <Stack gap="md">
+                            <Group grow>
+                                <TextInput
+                                    label={type === 'lxc' ? 'Hostname' : 'VM Name'}
+                                    placeholder={type === 'lxc' ? 'my-container' : 'my-vm'}
+                                    {...form.getInputProps('name')}
+                                />
+                                <NumberInput label="VMID" min={100} max={99999} {...form.getInputProps('vmid')} />
+                            </Group>
+                            <Group grow>
+                                <NumberInput label="CPU cores" min={1} max={64} {...form.getInputProps('cores')} />
+                                <NumberInput label="RAM (MB)" min={256} step={256} max={131072} {...form.getInputProps('memory')} />
+                            </Group>
+                            <NumberInput label="Root disk (GB)" min={1} max={8192} {...form.getInputProps('disk')} />
+                            {type === 'lxc' && (
+                                <TextInput label="Root password" type="password" {...form.getInputProps('password')} />
                             )}
-                            {bridgeOptions.length === 0 && !networksQ.isLoading && (
-                                <Alert color="yellow" size="sm" mb="sm">
-                                    No bridges found. Check node networks or mock data.
-                                </Alert>
-                            )}
+                            <Group justify="space-between" mt="md">
+                                <Button variant="subtle" onClick={() => setStep(1)}>Back</Button>
+                                <Button color="cyan" disabled={!form.values.name.trim()} onClick={() => setStep(3)}>Next</Button>
+                            </Group>
+                        </Stack>
+                    )}
 
-                            <Stack gap="sm">
-                                {form.values.nics.map((nic, idx) => (
-                                    <NicCard
-                                        key={idx}
-                                        nic={nic}
-                                        index={idx}
-                                        onUpdate={(updated) => updateNic(idx, updated)}
-                                        onRemove={() => removeNic(idx)}
-                                        canRemove={form.values.nics.length > 1}
-                                        bridgeOptions={bridgeOptions.length ? bridgeOptions : [{ value: nic.bridge, label: nic.bridge }]}
-                                        isVM={type === 'vm'}
-                                        onPickNetBox={() => setPickerNic(idx)}
-                                    />
-                                ))}
-                            </Stack>
+                    {/* ──────────── Step 3: Network & Storage ──────────── */}
+                    {step === 3 && (
+                        <Stack gap="lg">
+                            {/* Storage */}
+                            <Box>
+                                <Group gap="xs" mb="sm">
+                                    <ThemeIcon size="sm" color="teal" variant="light">
+                                        <IconDatabase size={12} />
+                                    </ThemeIcon>
+                                    <Text size="sm" fw={600}>Storage Pool</Text>
+                                </Group>
+                                <Select
+                                    label="Disk storage"
+                                    description="Where the VM disk or LXC rootfs will be created"
+                                    data={storageOptions}
+                                    value={form.values.storage}
+                                    onChange={(v) => form.setFieldValue('storage', v)}
+                                    placeholder={storageQ.isLoading ? 'Loading storage…' : 'Select storage pool'}
+                                    searchable
+                                />
+                                {storageOptions.length === 0 && !storageQ.isLoading && (
+                                    <Alert color="yellow" size="sm" mt="xs">
+                                        No storage pools found for this node. Check the API or mock data.
+                                    </Alert>
+                                )}
+                            </Box>
 
-                            {form.values.nics.length < 8 && (
-                                <Button
-                                    mt="sm"
-                                    variant="light"
-                                    color="cyan"
-                                    size="xs"
-                                    leftSection={<IconPlus size={12} />}
-                                    onClick={addNic}
-                                >
-                                    Add Network Interface
-                                </Button>
-                            )}
-                        </Box>
+                            <Divider />
 
-                        <Group justify="space-between" mt="md">
-                            <Button variant="subtle" onClick={() => setStep(2)}>Back</Button>
-                            <Button color="cyan" onClick={() => setStep(4)}>Next</Button>
-                        </Group>
-                    </Stack>
-                )}
+                            {/* NICs */}
+                            <Box>
+                                <Group gap="xs" mb="sm">
+                                    <ThemeIcon size="sm" color="cyan" variant="light">
+                                        <IconNetwork size={12} />
+                                    </ThemeIcon>
+                                    <Text size="sm" fw={600}>Network Interfaces</Text>
+                                    <Badge size="xs" variant="light" color="gray">{form.values.nics.length} / 8</Badge>
+                                </Group>
 
-                {/* ──────────── Step 4: Review ──────────── */}
-                {step === 4 && (
-                    <Stack gap="md">
-                        <Paper p="md" radius="md" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
-                            <Stack gap="xs">
-                                {reviewRows.map(([k, v]) => (
-                                    <Group key={k} justify="space-between">
-                                        <Text size="sm" c="dimmed">{k}</Text>
-                                        <Text size="sm" fw={500}>{String(v)}</Text>
-                                    </Group>
-                                ))}
-                            </Stack>
-                        </Paper>
+                                {networksQ.isLoading && (
+                                    <Text size="xs" c="dimmed">Loading bridges…</Text>
+                                )}
+                                {bridgeOptions.length === 0 && !networksQ.isLoading && (
+                                    <Alert color="yellow" size="sm" mb="sm">
+                                        No bridges found. Check node networks or mock data.
+                                    </Alert>
+                                )}
 
-                        <Paper p="md" radius="md" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
-                            <Text size="sm" fw={600} mb="xs">Network Interfaces</Text>
-                            <Table withRowBorders={false} fz="sm">
-                                <Table.Thead>
-                                    <Table.Tr>
-                                        <Table.Th>Iface</Table.Th>
-                                        <Table.Th>Bridge</Table.Th>
-                                        <Table.Th>VLAN</Table.Th>
-                                        {type === 'vm' && <Table.Th>Model</Table.Th>}
-                                        <Table.Th>IPv4</Table.Th>
-                                        <Table.Th>GW4</Table.Th>
-                                        <Table.Th>IPv6</Table.Th>
-                                        <Table.Th>GW6</Table.Th>
-                                        <Table.Th>DNS</Table.Th>
-                                    </Table.Tr>
-                                </Table.Thead>
-                                <Table.Tbody>
+                                <Stack gap="sm">
                                     {form.values.nics.map((nic, idx) => (
-                                        <Table.Tr key={idx}>
-                                            <Table.Td c="dimmed">net{idx}</Table.Td>
-                                            <Table.Td fw={500}>{nic.bridge}</Table.Td>
-                                            <Table.Td>{nic.vlan ?? <Text c="dimmed" span>—</Text>}</Table.Td>
-                                            {type === 'vm' && <Table.Td>{nic.model}</Table.Td>}
-                                            <Table.Td>{nic.ip || <Text c="dimmed" span>dhcp</Text>}</Table.Td>
-                                            <Table.Td>{nic.gw || <Text c="dimmed" span>—</Text>}</Table.Td>
-                                            <Table.Td>{nic.ip6 || <Text c="dimmed" span>—</Text>}</Table.Td>
-                                            <Table.Td>{nic.gw6 || <Text c="dimmed" span>—</Text>}</Table.Td>
-                                            <Table.Td>{nic.dns || <Text c="dimmed" span>—</Text>}</Table.Td>
-                                        </Table.Tr>
+                                        <NicCard
+                                            key={idx}
+                                            nic={nic}
+                                            index={idx}
+                                            onUpdate={(updated) => updateNic(idx, updated)}
+                                            onRemove={() => removeNic(idx)}
+                                            canRemove={form.values.nics.length > 1}
+                                            bridgeOptions={bridgeOptions.length ? bridgeOptions : [{ value: nic.bridge, label: nic.bridge }]}
+                                            isVM={type === 'vm'}
+                                            onPickNetBox={() => setPickerNic(idx)}
+                                        />
                                     ))}
-                                </Table.Tbody>
-                            </Table>
-                        </Paper>
+                                </Stack>
 
-                        <Group justify="space-between" mt="md">
-                            <Button variant="subtle" onClick={() => setStep(3)}>Back</Button>
-                            <Button
-                                color="cyan"
-                                leftSection={<IconRocket size={14} />}
-                                loading={submitMutation.isPending}
-                                onClick={() => submitMutation.mutate(form.values)}
-                            >
-                                Provision
-                            </Button>
-                        </Group>
-                    </Stack>
-                )}
+                                {form.values.nics.length < 8 && (
+                                    <Button
+                                        mt="sm"
+                                        variant="light"
+                                        color="cyan"
+                                        size="xs"
+                                        leftSection={<IconPlus size={12} />}
+                                        onClick={addNic}
+                                    >
+                                        Add Network Interface
+                                    </Button>
+                                )}
+                            </Box>
 
-                {/* ──────────── Step 5: Progress ──────────── */}
-                {step === 5 && (
-                    <Stack gap="lg" align="center" py="md">
-                        {taskStatus === 'running' && (
-                            <>
-                                <Text fw={600}>Provisioning {type === 'vm' ? 'VM' : 'container'}…</Text>
-                                <Progress value={progress} color="cyan" animated w="100%" size="lg" radius="xl" />
-                                <Text size="xs" c="dimmed">UPID: {upid}</Text>
-                            </>
-                        )}
-                        {taskStatus === 'done' && (
-                            <>
-                                <Badge size="xl" color="green" leftSection={<IconCheck size={14} />}>Success</Badge>
-                                <Text size="sm" c="dimmed">
-                                    {type === 'vm' ? 'VM' : 'Container'} <strong>{form.values.name}</strong> (VMID {form.values.vmid}) provisioned on <strong>{node}</strong>.
-                                </Text>
-                                <Button color="cyan" onClick={() => {
-                                    setStep(0);
-                                    form.reset();
-                                    form.setFieldValue('nics', [defaultNic(type)]);
-                                    setUpid(null);
-                                    setTaskStatus(null);
-                                    setProgress(0);
-                                }}>
-                                    Provision Another
+                            <Group justify="space-between" mt="md">
+                                <Button variant="subtle" onClick={() => setStep(2)}>Back</Button>
+                                <Button color="cyan" onClick={() => setStep(4)}>Next</Button>
+                            </Group>
+                        </Stack>
+                    )}
+
+                    {/* ──────────── Step 4: Review ──────────── */}
+                    {step === 4 && (
+                        <Stack gap="md">
+                            <Paper p="md" radius="md" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+                                <Stack gap="xs">
+                                    {reviewRows.map(([k, v]) => (
+                                        <Group key={k} justify="space-between">
+                                            <Text size="sm" c="dimmed">{k}</Text>
+                                            <Text size="sm" fw={500}>{String(v)}</Text>
+                                        </Group>
+                                    ))}
+                                </Stack>
+                            </Paper>
+
+                            <Paper p="md" radius="md" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+                                <Text size="sm" fw={600} mb="xs">Network Interfaces</Text>
+                                <Table withRowBorders={false} fz="sm">
+                                    <Table.Thead>
+                                        <Table.Tr>
+                                            <Table.Th>Iface</Table.Th>
+                                            <Table.Th>Bridge</Table.Th>
+                                            <Table.Th>VLAN</Table.Th>
+                                            {type === 'vm' && <Table.Th>Model</Table.Th>}
+                                            <Table.Th>IPv4</Table.Th>
+                                            <Table.Th>GW4</Table.Th>
+                                            <Table.Th>IPv6</Table.Th>
+                                            <Table.Th>GW6</Table.Th>
+                                            <Table.Th>DNS</Table.Th>
+                                        </Table.Tr>
+                                    </Table.Thead>
+                                    <Table.Tbody>
+                                        {form.values.nics.map((nic, idx) => (
+                                            <Table.Tr key={idx}>
+                                                <Table.Td c="dimmed">net{idx}</Table.Td>
+                                                <Table.Td fw={500}>{nic.bridge}</Table.Td>
+                                                <Table.Td>{nic.vlan ?? <Text c="dimmed" span>—</Text>}</Table.Td>
+                                                {type === 'vm' && <Table.Td>{nic.model}</Table.Td>}
+                                                <Table.Td>{nic.ip || <Text c="dimmed" span>dhcp</Text>}</Table.Td>
+                                                <Table.Td>{nic.gw || <Text c="dimmed" span>—</Text>}</Table.Td>
+                                                <Table.Td>{nic.ip6 || <Text c="dimmed" span>—</Text>}</Table.Td>
+                                                <Table.Td>{nic.gw6 || <Text c="dimmed" span>—</Text>}</Table.Td>
+                                                <Table.Td>{nic.dns || <Text c="dimmed" span>—</Text>}</Table.Td>
+                                            </Table.Tr>
+                                        ))}
+                                    </Table.Tbody>
+                                </Table>
+                            </Paper>
+
+                            <Group justify="space-between" mt="md">
+                                <Button variant="subtle" onClick={() => setStep(3)}>Back</Button>
+                                <Button
+                                    color="cyan"
+                                    leftSection={<IconRocket size={14} />}
+                                    loading={submitMutation.isPending}
+                                    onClick={() => submitMutation.mutate(form.values)}
+                                >
+                                    Provision
                                 </Button>
-                            </>
-                        )}
-                        {taskStatus === 'error' && (
-                            <>
-                                <Badge size="xl" color="red" leftSection={<IconX size={14} />}>Failed</Badge>
-                                <Text size="sm" c="red">The provisioning task failed. Check the Proxmox task log.</Text>
-                                <Button variant="subtle" onClick={() => setStep(4)}>Go Back</Button>
-                            </>
-                        )}
-                    </Stack>
-                )}
-            </Paper>
+                            </Group>
+                        </Stack>
+                    )}
 
-            {/* NetBox NIC picker modal */}
-            <NetBoxNicPicker
-                opened={pickerNic !== null}
-                onClose={() => setPickerNic(null)}
-                onApply={applyNetBoxPick}
-                nicIndex={pickerNic ?? 0}
-            />
-        </Box>
-    );
-}
+                    {/* ──────────── Step 5: Progress ──────────── */}
+                    {step === 5 && (
+                        <Stack gap="lg" align="center" py="md">
+                            {taskStatus === 'running' && (
+                                <>
+                                    <Text fw={600}>Provisioning {type === 'vm' ? 'VM' : 'container'}…</Text>
+                                    <Progress value={progress} color="cyan" animated w="100%" size="lg" radius="xl" />
+                                    <Text size="xs" c="dimmed">UPID: {upid}</Text>
+                                </>
+                            )}
+                            {taskStatus === 'done' && (
+                                <>
+                                    <Badge size="xl" color="green" leftSection={<IconCheck size={14} />}>Success</Badge>
+                                    <Text size="sm" c="dimmed">
+                                        {type === 'vm' ? 'VM' : 'Container'} <strong>{form.values.name}</strong> (VMID {form.values.vmid}) provisioned on <strong>{node}</strong>.
+                                    </Text>
+                                    <Button color="cyan" onClick={() => {
+                                        setStep(0);
+                                        form.reset();
+                                        form.setFieldValue('nics', [defaultNic(type)]);
+                                        setUpid(null);
+                                        setTaskStatus(null);
+                                        setProgress(0);
+                                    }}>
+                                        Provision Another
+                                    </Button>
+                                </>
+                            )}
+                            {taskStatus === 'error' && (
+                                <>
+                                    <Badge size="xl" color="red" leftSection={<IconX size={14} />}>Failed</Badge>
+                                    <Text size="sm" c="red">The provisioning task failed. Check the Proxmox task log.</Text>
+                                    <Button variant="subtle" onClick={() => setStep(4)}>Go Back</Button>
+                                </>
+                            )}
+                        </Stack>
+                    )}
+                </Paper>
+
+                {/* NetBox NIC picker modal */}
+                <NetBoxNicPicker
+                    opened={pickerNic !== null}
+                    onClose={() => setPickerNic(null)}
+                    onApply={applyNetBoxPick}
+                    nicIndex={pickerNic ?? 0}
+                />
+            </Box>
+        );
+    }
