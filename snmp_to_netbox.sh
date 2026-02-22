@@ -27,6 +27,9 @@
 #   -t TYPE_NAME  Create/Use this Device Type (instead of picking the first available)
 #   -f CSV_FILE   Read from CSV file. Format: IP,NAME,[SITE],[ROLE],[TYPE]
 #                 (Columns left blank in CSV will fallback to the CLI flags or defaults)
+#
+# Note: DEVICE_IP and CSV IP columns can be a literal IPv4 address, a literal
+#       IPv6 address, or a DNS hostname (resolving to A or AAAA records).
 # ------------------------------------------------------------
 
 set -eu
@@ -92,9 +95,29 @@ process_device() {
   local ROLE_NAME="${4:-$ROLE_NAME_GLOBAL}"
   local TYPE_NAME="${5:-$TYPE_NAME_GLOBAL}"
 
+  # Format DEVICE_IP properly for snmp tools
+  # Input can be a literal IP, a DNS name (A/AAAA), or a literal IPv6 address
+  local SNMP_TARGET="$DEVICE_IP"
+  if echo "$DEVICE_IP" | grep -qE "^udp6?:"; then
+    # Already has transport specified, leave it alone
+    SNMP_TARGET="$DEVICE_IP"
+  elif echo "$DEVICE_IP" | grep -q ":"; then
+    SNMP_TARGET="udp6:[$DEVICE_IP]"
+  elif echo "$DEVICE_IP" | grep -qE "^[0-9]{1,3}(\.[0-9]{1,3}){3}$"; then
+    SNMP_TARGET="udp:$DEVICE_IP"
+  else
+    # Hostname: try to determine if it responds on IPv4 or IPv6
+    if snmpget -v2c -c "$SNMP_COMMUNITY" -t 1 -r 0 "udp:$DEVICE_IP" 1.3.6.1.2.1.1.1.0 >/dev/null 2>&1; then
+      SNMP_TARGET="udp:$DEVICE_IP"
+    elif snmpget -v2c -c "$SNMP_COMMUNITY" -t 1 -r 0 "udp6:$DEVICE_IP" 1.3.6.1.2.1.1.1.0 >/dev/null 2>&1; then
+      SNMP_TARGET="udp6:$DEVICE_IP"
+    fi
+  fi
+
   echo ""
   echo "============================================================"
   echo "Processing Device: $DEVICE_NAME ($DEVICE_IP)"
+  echo "Targeting SNMP at: $SNMP_TARGET"
   echo "============================================================"
 
   # 1. Ensure device exists (or create it)
@@ -175,7 +198,7 @@ process_device() {
 
   # 2. Walk interfaces (IF-MIB::ifDescr)
   echo "Walking interfaces..."
-  INTERFACES=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" IF-MIB::ifDescr || true)
+  INTERFACES=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" IF-MIB::ifDescr 2>/dev/null || true)
   echo "$INTERFACES" | while IFS= read -r line; do
     # Example line: IF-MIB::ifDescr.1 = STRING: lo
     if echo "$line" | grep -q 'IF-MIB::ifDescr\.[0-9]* = STRING: .*'; then
@@ -200,16 +223,16 @@ process_device() {
 
   # 3. Walk IPv4 addresses (IP-MIB::ipAddrTable)
   echo "Walking IPv4 addresses..."
-  IPV4=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" IP-MIB::ipAdEntAddr || true)
+  IPV4=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" IP-MIB::ipAdEntAddr 2>/dev/null || true)
   echo "$IPV4" | while IFS= read -r line; do
     # Example: IP-MIB::ipAdEntAddr.10.0.0.1 = IpAddress: 10.0.0.1
     if echo "$line" | grep -q 'IP-MIB::ipAdEntAddr\.[0-9.]* = IpAddress: .*'; then
       ip=$(echo "$line" | sed 's/.*IpAddress: \(.*\)/\1/')
-      idx_line=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" "IP-MIB::ipAdEntIfIndex.$ip" 2>/dev/null || true)
+      idx_line=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" "IP-MIB::ipAdEntIfIndex.$ip" 2>/dev/null || true)
       
       if echo "$idx_line" | grep -q 'IP-MIB::ipAdEntIfIndex\.[0-9.]* = INTEGER: [0-9]*'; then
         ifIndex=$(echo "$idx_line" | sed 's/.*INTEGER: \([0-9]*\).*/\1/')
-        ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" "IF-MIB::ifDescr.$ifIndex" 2>/dev/null | awk -F"STRING: " '{print $2}')
+        ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" "IF-MIB::ifDescr.$ifIndex" 2>/dev/null | awk -F"STRING: " '{print $2}')
         
         payload=$(jq -n \
           --arg address "$ip/32" \
@@ -235,16 +258,16 @@ process_device() {
 
   # 4. Walk IPv6 addresses (IPV6-MIB::ipv6AddrAddress)
   echo "Walking IPv6 addresses..."
-  IPV6=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" IPV6-MIB::ipv6AddrAddress || true)
+  IPV6=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" IPV6-MIB::ipv6AddrAddress 2>/dev/null || true)
   echo "$IPV6" | while IFS= read -r line; do
     # Example: IPV6-MIB::ipv6AddrAddress.2001:db8::1 = IpAddress: 2001:db8::1
     if echo "$line" | grep -Eq 'IPV6-MIB::ipv6AddrAddress\.[0-9A-Fa-f:]* = IpAddress: .*'; then
       ip=$(echo "$line" | sed 's/.*IpAddress: \(.*\)/\1/')
-      idx_line=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" "IPV6-MIB::ipv6IfIndex.$ip" 2>/dev/null || true)
+      idx_line=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" "IPV6-MIB::ipv6IfIndex.$ip" 2>/dev/null || true)
       
       if echo "$idx_line" | grep -q 'IPV6-MIB::ipv6IfIndex\.[0-9A-Fa-f:]* = INTEGER: [0-9]*'; then
         ifIndex=$(echo "$idx_line" | sed 's/.*INTEGER: \([0-9]*\).*/\1/')
-        ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" "IF-MIB::ifDescr.$ifIndex" 2>/dev/null | awk -F"STRING: " '{print $2}')
+        ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" "IF-MIB::ifDescr.$ifIndex" 2>/dev/null | awk -F"STRING: " '{print $2}')
         
         payload=$(jq -n \
           --arg address "$ip/128" \
@@ -270,7 +293,7 @@ process_device() {
 
   # 5. Serial number (ENTITY-MIB::entPhysicalSerialNum)
   echo "Fetching serial number..."
-  SERIAL=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" ENTITY-MIB::entPhysicalSerialNum 2>/dev/null | head -n1 | awk -F"STRING: " '{print $2}' || true)
+  SERIAL=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" ENTITY-MIB::entPhysicalSerialNum 2>/dev/null | head -n1 | awk -F"STRING: " '{print $2}' || true)
   if [ -n "$SERIAL" ]; then
     payload=$(jq -n \
       --arg serial "$SERIAL" \
@@ -280,7 +303,7 @@ process_device() {
   fi
 
   # 6. VRFs – optional via CISCO-VRF-MIB::ciscoVrfNameTable
-  VRFS=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" CISCO-VRF-MIB::ciscoVrfName || true)
+  VRFS=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" CISCO-VRF-MIB::ciscoVrfName 2>/dev/null || true)
   if [ -n "$VRFS" ]; then
     echo "Processing VRFs..."
     echo "$VRFS" | while IFS= read -r line; do
@@ -304,7 +327,7 @@ process_device() {
   fi
 
   # 7. VLANs – discovered via Q-BRIDGE-MIB::dot1qVlanStaticName
-  VLANs=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$DEVICE_IP" Q-BRIDGE-MIB::dot1qVlanStaticName || true)
+  VLANs=$(snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" Q-BRIDGE-MIB::dot1qVlanStaticName 2>/dev/null || true)
   if [ -n "$VLANs" ]; then
     echo "Processing VLANs..."
     echo "$VLANs" | while IFS= read -r line; do
