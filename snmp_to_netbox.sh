@@ -64,11 +64,34 @@ nb_api() {
 DEVICE_ID=$(nb_api GET dcim/devices "?name=$DEVICE_NAME" | jq -r '.results[0].id // empty')
 if [ -z "$DEVICE_ID" ]; then
   echo "Device $DEVICE_NAME not found in NetBox – creating..."
+  # Fetch first available site, role, and type to use as defaults
+  SITE_ID=$(nb_api GET dcim/sites "?limit=1" | jq -r '.results[0].id // empty')
+  ROLE_ID=$(nb_api GET dcim/device-roles "?limit=1" | jq -r '.results[0].id // empty')
+  TYPE_ID=$(nb_api GET dcim/device-types "?limit=1" | jq -r '.results[0].id // empty')
+  
+  if [ -z "$SITE_ID" ] || [ -z "$ROLE_ID" ] || [ -z "$TYPE_ID" ]; then
+    echo "Error: Cannot create device. Ensure at least one Site, Device Role, and Device Type exist in NetBox."
+    exit 1
+  fi
+  
   payload=$(jq -n \
     --arg name "$DEVICE_NAME" \
     --arg status "active" \
-    '{name: $name, status: $status, device_type: 1, device_role: 1, site: 1}')
-  DEVICE_ID=$(nb_api POST dcim/devices "$payload" | jq -r '.id')
+    --arg site "$SITE_ID" \
+    --arg role "$ROLE_ID" \
+    --arg type "$TYPE_ID" \
+    '{name: $name, status: $status, device_type: ($type|tonumber), device_role: ($role|tonumber), site: ($site|tonumber)}')
+  
+  # Try to create device
+  DEVICE_ID=$(nb_api POST dcim/devices "$payload" | jq -r '.id // empty')
+  
+  # Validate that creation actually succeeded
+  if [ -z "$DEVICE_ID" ] || [ "$DEVICE_ID" = "null" ]; then
+    echo "Failed to create device. Is the device name unique? Raw response payload:"
+    nb_api POST dcim/devices "$payload"
+    exit 1
+  fi
+  
   echo "Created device with ID $DEVICE_ID"
 else
   echo "Device $DEVICE_NAME exists with ID $DEVICE_ID"
