@@ -107,6 +107,32 @@ nb_urlencode() {
   printf '%s' "$1" | jq -Rr @uri
 }
 
+# normalize_ipv6 raw  → canonical compressed IPv6 string
+# Handles two formats emitted by net-snmp:
+#   1. Standard:  fd68:1e02:dc1a:ffff::1
+#   2. Byte-pair: fd:68:1e:02:dc:1a:ff:ff:00:00:00:00:00:00:00:01  (16 colon-separated hex bytes)
+# Returns empty string on any parse failure so callers can skip bad addresses.
+normalize_ipv6() {
+  local raw="$1"
+  # If raw contains only 1-4 hex char groups (standard notation), leave it alone
+  if echo "$raw" | grep -qE '^[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){2,}(::|$)' || \
+     echo "$raw" | grep -qE '^::' || \
+     ! echo "$raw" | grep -qE '^([0-9a-fA-F]{2}:){15}[0-9a-fA-F]{2}$'; then
+    # Looks like standard notation already – just normalise via python3
+    python3 -c "import ipaddress; print(str(ipaddress.ip_address('$raw')))" 2>/dev/null || echo ""
+  else
+    # Byte-pair format: strip colons → 32 hex chars → group into 4-char words → compress
+    python3 -c "
+import ipaddress, sys
+raw = '$raw'.replace(':', '')
+if len(raw) != 32:
+    sys.exit(1)
+groups = [raw[i:i+4] for i in range(0, 32, 4)]
+print(str(ipaddress.ip_address(':'.join(groups))))
+" 2>/dev/null || echo ""
+  fi
+}
+
 # mask_to_prefix  dotted-decimal-mask  → prefix-length integer
 mask_to_prefix() {
   local mask="$1"
@@ -392,10 +418,14 @@ process_device() {
   while IFS= read -r line; do
     # IP-MIB::ipAddressIfIndex.ipv6."fd68:1e02:dc1a:ffff::1" = INTEGER: 13
     if echo "$line" | grep -qE 'IP-MIB::ipAddressIfIndex\.ipv6\."[^"]+" = INTEGER: [0-9]+'; then
-      ip6=$(echo "$line" | sed 's/.*ipv6\."\([^"]*\)".*/\1/')
+      ip6_raw=$(echo "$line" | sed 's/.*ipv6\."\([^"]*\)".*/\1/')
       ifIndex=$(echo "$line" | sed 's/.*INTEGER: //')
 
-      # Skip link-local addresses (fe80::)
+      # Normalise to proper compressed IPv6 notation (handles RouterOS byte-pair encoding)
+      ip6=$(normalize_ipv6 "$ip6_raw")
+      [ -z "$ip6" ] && { echo "  Warning: could not parse IPv6 from: $ip6_raw"; continue; }
+
+      # Skip link-local addresses (fe80:: in any encoding)
       echo "$ip6" | grep -qi '^fe80' && continue
 
       ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" \
