@@ -94,11 +94,17 @@ nb_api() {
 }
 
 # nb_get endpoint query_string  → returns JSON body
+# query_string is appended verbatim: "param1=val1&param2=val2"
+# For values that contain '/' (e.g. CIDR), encode them with nb_urlencode first.
 nb_get() {
-  curl -sS -G "${NETBOX_URL}/api/${1}/" \
+  curl -sS "${NETBOX_URL}/api/${1}/?${2}" \
     -H "Authorization: Token $NETBOX_TOKEN" \
-    -H "Content-Type: application/json" \
-    --data-urlencode "${2}"
+    -H "Content-Type: application/json"
+}
+
+# nb_urlencode string  → percent-encode characters unsafe in query values
+nb_urlencode() {
+  printf '%s' "$1" | jq -Rr @uri
 }
 
 # mask_to_prefix  dotted-decimal-mask  → prefix-length integer
@@ -167,7 +173,8 @@ process_device() {
   # 1. Ensure device exists in NetBox (or create it)
   # ------------------------------------------------------------------
   # Use exact name filter; URL-encode the name to handle special chars
-  DEVICE_ID=$(nb_get "dcim/devices" "name=${DEVICE_NAME}" | jq -r '.results[] | select(.name == "'"$DEVICE_NAME"'") | .id' | head -n1)
+  enc_dname=$(nb_urlencode "$DEVICE_NAME")
+  DEVICE_ID=$(nb_get "dcim/devices" "name=${enc_dname}" | jq -r '(.results // [])[] | select(.name == "'"$DEVICE_NAME"'") | .id' | head -n1)
 
   if [ -z "$DEVICE_ID" ]; then
     echo "Device $DEVICE_NAME not found in NetBox – creating..."
@@ -265,8 +272,9 @@ process_device() {
         --argjson dev "$DEVICE_ID" \
         '{name:$name, device:$dev, type:"other"}')
 
-      iface_id=$(nb_get "dcim/interfaces" "device_id=${DEVICE_ID}&name=${ifName}" \
-        | jq -r '.results[] | select(.name == "'"$ifName"'") | .id' | head -n1)
+      enc_name=$(nb_urlencode "$ifName")
+      iface_id=$(nb_get "dcim/interfaces" "device_id=${DEVICE_ID}&name=${enc_name}" \
+        | jq -r '(.results // [])[] | select(.name == "'"$ifName"'") | .id' | head -n1)
 
       if [ -z "$iface_id" ]; then
         resp=$(nb_api POST dcim/interfaces "$payload")
@@ -330,8 +338,9 @@ process_device() {
       cidr="${ip}/${prefix}"
 
       # Find the NetBox interface ID for this device+ifName
-      iface_id=$(nb_get "dcim/interfaces" "device_id=${DEVICE_ID}&name=${ifName}" \
-        | jq -r '.results[] | select(.name == "'"$ifName"'") | .id' | head -n1)
+      enc_name=$(nb_urlencode "$ifName")
+      iface_id=$(nb_get "dcim/interfaces" "device_id=${DEVICE_ID}&name=${enc_name}" \
+        | jq -r '(.results // [])[] | select(.name == "'"$ifName"'") | .id' | head -n1)
 
       if [ -z "$iface_id" ]; then
         echo "  Warning: interface $ifName not in NetBox yet – skipping IP $cidr"
@@ -347,8 +356,9 @@ process_device() {
           status:"active"}')
 
       # Search for existing IP (URL-encode the slash)
-      ip_id=$(nb_get "ipam/ip-addresses" "address=${cidr}" \
-        | jq -r '.results[] | select(.address == "'"$cidr"'") | .id' | head -n1)
+      enc_cidr=$(nb_urlencode "$cidr")
+      ip_id=$(nb_get "ipam/ip-addresses" "address=${enc_cidr}" \
+        | jq -r '(.results // [])[] | select(.address == "'"$cidr"'") | .id' | head -n1)
 
       if [ -z "$ip_id" ]; then
         resp=$(nb_api POST ipam/ip-addresses "$payload")
@@ -403,8 +413,9 @@ process_device() {
 
       cidr="${ip6}/${prefix}"
 
-      iface_id=$(nb_get "dcim/interfaces" "device_id=${DEVICE_ID}&name=${ifName}" \
-        | jq -r '.results[] | select(.name == "'"$ifName"'") | .id' | head -n1)
+      enc_name=$(nb_urlencode "$ifName")
+      iface_id=$(nb_get "dcim/interfaces" "device_id=${DEVICE_ID}&name=${enc_name}" \
+        | jq -r '(.results // [])[] | select(.name == "'"$ifName"'") | .id' | head -n1)
 
       if [ -z "$iface_id" ]; then
         echo "  Warning: interface $ifName not in NetBox yet – skipping IPv6 $cidr"
@@ -419,8 +430,9 @@ process_device() {
           assigned_object_id:$iface_id,
           status:"active"}')
 
-      ip_id=$(nb_get "ipam/ip-addresses" "address=${cidr}" \
-        | jq -r '.results[] | select(.address == "'"$cidr"'") | .id' | head -n1)
+      enc_cidr=$(nb_urlencode "$cidr")
+      ip_id=$(nb_get "ipam/ip-addresses" "address=${enc_cidr}" \
+        | jq -r '(.results // [])[] | select(.address == "'"$cidr"'") | .id' | head -n1)
 
       if [ -z "$ip_id" ]; then
         resp=$(nb_api POST ipam/ip-addresses "$payload")
@@ -474,8 +486,9 @@ process_device() {
       if echo "$line" | grep -qE 'CISCO-VRF-MIB::ciscoVrfName\.[0-9]+ = STRING: .+'; then
         vrf_name=$(snmp_str "$line")
         [ -z "$vrf_name" ] && continue
-        existing=$(nb_get "ipam/vrfs" "name=${vrf_name}" \
-          | jq -r '.results[] | select(.name == "'"$vrf_name"'") | .id' | head -n1)
+        enc_vrf=$(nb_urlencode "$vrf_name")
+        existing=$(nb_get "ipam/vrfs" "name=${enc_vrf}" \
+          | jq -r '(.results // [])[] | select(.name == "'"$vrf_name"'") | .id' | head -n1)
         payload=$(jq -n --arg name "$vrf_name" '{name:$name}')
         if [ -z "$existing" ]; then
           resp=$(nb_api POST ipam/vrfs "$payload")
@@ -506,7 +519,7 @@ process_device() {
         vlan_name=$(snmp_str "$line")
         [ -z "$vlan_name" ] && vlan_name="VLAN${vlan_id}"
         existing=$(nb_get "ipam/vlans" "vid=${vlan_id}" \
-          | jq -r ".results[] | select(.vid == ${vlan_id}) | .id" | head -n1)
+          | jq -r "(.results // [])[] | select(.vid == ${vlan_id}) | .id" | head -n1)
         payload=$(jq -n \
           --arg name "$vlan_name" \
           --argjson vid "$vlan_id" \
