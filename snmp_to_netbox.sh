@@ -37,6 +37,12 @@ TYPE_NAME_GLOBAL=""
 CSV_FILE=""
 DEBUG=0
 
+# Pre-scan ALL arguments for -d so it can appear anywhere on the command line
+# (POSIX getopts stops at the first non-option, so -d after the IP/name would be missed)
+for _arg in "$@"; do
+  [ "$_arg" = "-d" ] && DEBUG=1
+done
+
 while getopts "s:r:t:f:dh" opt; do
   case "$opt" in
     s) SITE_NAME_GLOBAL="$OPTARG" ;;
@@ -170,18 +176,38 @@ process_device() {
   local TYPE_NAME="${5:-$TYPE_NAME_GLOBAL}"
 
   # ---- SNMP transport target ------------------------------------------------
-  local SNMP_TARGET="$DEVICE_IP"
+  # Try multiple transport formats to accommodate different net-snmp builds.
+  # For bare IPv6 literals we prefer udp6:[ip], falling back to [ip] then bare.
+  _try_snmp_target() {
+    snmpget -v2c -c "$SNMP_COMMUNITY" -t 3 -r 1 "$1" \
+      1.3.6.1.2.1.1.1.0 >/dev/null 2>&1
+  }
+
+  local SNMP_TARGET=""
   if echo "$DEVICE_IP" | grep -qE "^udp6?:"; then
+    # Already has explicit transport prefix – use as-is
     SNMP_TARGET="$DEVICE_IP"
   elif echo "$DEVICE_IP" | grep -q ":"; then
-    SNMP_TARGET="udp6:[$DEVICE_IP]"
+    # Bare IPv6 literal – probe three format variants
+    if _try_snmp_target "udp6:[$DEVICE_IP]"; then
+      SNMP_TARGET="udp6:[$DEVICE_IP]"
+    elif _try_snmp_target "[$DEVICE_IP]"; then
+      SNMP_TARGET="[$DEVICE_IP]"
+    elif _try_snmp_target "$DEVICE_IP"; then
+      SNMP_TARGET="$DEVICE_IP"
+    else
+      SNMP_TARGET="udp6:[$DEVICE_IP]"   # best guess; walks will warn if empty
+    fi
   elif echo "$DEVICE_IP" | grep -qE "^[0-9]{1,3}(\.[0-9]{1,3}){3}$"; then
-    SNMP_TARGET="udp:$DEVICE_IP"
+    SNMP_TARGET="$DEVICE_IP"
   else
-    if snmpget -v2c -c "$SNMP_COMMUNITY" -t 2 -r 1 "udp:$DEVICE_IP" 1.3.6.1.2.1.1.1.0 >/dev/null 2>&1; then
-      SNMP_TARGET="udp:$DEVICE_IP"
-    elif snmpget -v2c -c "$SNMP_COMMUNITY" -t 2 -r 1 "udp6:$DEVICE_IP" 1.3.6.1.2.1.1.1.0 >/dev/null 2>&1; then
+    # Hostname – probe IPv4 then IPv6
+    if _try_snmp_target "$DEVICE_IP"; then
+      SNMP_TARGET="$DEVICE_IP"
+    elif _try_snmp_target "udp6:$DEVICE_IP"; then
       SNMP_TARGET="udp6:$DEVICE_IP"
+    else
+      SNMP_TARGET="$DEVICE_IP"
     fi
   fi
 
@@ -190,6 +216,25 @@ process_device() {
   echo "Processing Device: $DEVICE_NAME ($DEVICE_IP)"
   echo "SNMP target:       $SNMP_TARGET"
   echo "============================================================"
+
+  # ---- SNMP connectivity test -----------------------------------------------
+  if [ "$DEBUG" -eq 1 ]; then
+    echo "[DEBUG] Community length: ${#SNMP_COMMUNITY} chars"
+    echo "[DEBUG] snmpget test: snmpget -v2c -c '***' $SNMP_TARGET 1.3.6.1.2.1.1.1.0"
+  fi
+  _snmp_test=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" \
+    1.3.6.1.2.1.1.1.0 2>&1 || true)
+  if echo "$_snmp_test" | grep -q 'STRING:'; then
+    _sysdescr=$(echo "$_snmp_test" | sed 's/.*STRING: //; s/^"//; s/"$///' | cut -c1-72)
+    echo "SNMP OK: $_sysdescr"
+  else
+    echo "WARNING: SNMP test failed for $SNMP_TARGET"
+    echo "  Response: $_snmp_test"
+    echo "  Verify community='${SNMP_COMMUNITY}' is correct and source IP is allowed."
+    echo "  Skipping SNMP walks for this device."
+    return 0
+  fi
+
 
   # ---- 1. Device in NetBox --------------------------------------------------
   enc_dname=$(nb_urlencode "$DEVICE_NAME")
@@ -267,34 +312,38 @@ process_device() {
   fi
 
   # ---- 2. Interfaces --------------------------------------------------------
-  # Walk ifDescr (1.3.6.1.2.1.2.2.1.2) and ifAlias (1.3.6.1.2.1.31.1.1.1.18)
-  # using numeric OIDs so output is consistent regardless of MIB availability.
+  # Walk ifDescr (IF-MIB) for interface names + ifAlias for descriptions.
+  # Accept both MIB-resolved output (IF-MIB::ifDescr.N) and raw numeric OID
+  # output (.1.3.6.1.2.1.2.2.1.2.N) from hosts without full MIB files.
   echo "Walking interfaces..."
 
   ALIAS_FILE=$(mktemp)
-  snmpwalk -On -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" 1.3.6.1.2.1.31.1.1.1.18 \
+  snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" IF-MIB::ifAlias \
     2>/dev/null > "$ALIAS_FILE" || true
-  alias_count=$(grep -c '= STRING:' "$ALIAS_FILE" || true)
-  dbg "ifAlias: $alias_count entries"
+  dbg "ifAlias raw:"; [ "$DEBUG" -eq 1 ] && head -3 "$ALIAS_FILE" | sed 's/^/  [raw] /' >&2 || true
 
   TMPFILE=$(mktemp)
-  snmpwalk -On -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" 1.3.6.1.2.1.2.2.1.2 \
+  snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" IF-MIB::ifDescr \
     2>/dev/null > "$TMPFILE" || true
-  iface_count=$(grep -c '= STRING:' "$TMPFILE" || true)
-  echo "  Found $iface_count interfaces via SNMP"
+  iface_count=$(grep -c 'STRING:' "$TMPFILE" 2>/dev/null || echo "0")
+  echo "  Found $iface_count interface(s) via SNMP"
+  dbg "ifDescr raw:"; [ "$DEBUG" -eq 1 ] && head -3 "$TMPFILE" | sed 's/^/  [raw] /' >&2 || true
 
   if [ "$iface_count" -eq 0 ]; then
-    echo "  Warning: no interfaces returned. Check community string and SNMP ACLs on the device."
+    echo "  Warning: no interfaces returned – check community string and SNMP ACLs."
   fi
 
   while IFS= read -r line; do
-    # .1.3.6.1.2.1.2.2.1.2.4 = STRING: ether1
-    if echo "$line" | grep -qE '\.1\.3\.6\.1\.2\.1\.2\.2\.1\.2\.([0-9]+) = STRING: .+'; then
-      ifIndex=$(echo "$line" | sed 's/.*\.2\.2\.1\.2\.\([0-9]*\) .*/\1/')
+    # Match both MIB-name and numeric-OID output formats:
+    #   IF-MIB::ifDescr.4 = STRING: ether1
+    #   .1.3.6.1.2.1.2.2.1.2.4 = STRING: ether1
+    if echo "$line" | grep -qE '(IF-MIB::ifDescr|1\.3\.6\.1\.2\.1\.2\.2\.1\.2)\.[0-9]+ = STRING: .+'; then
+      ifIndex=$(echo "$line" | sed 's/.*\.\([0-9]*\) = STRING:.*/\1/')
       ifName=$(snmp_str "$line")
       [ -z "$ifName" ] && continue
 
-      alias_line=$(grep -E "\.1\.3\.6\.1\.2\.1\.31\.1\.1\.1\.18\.${ifIndex} = " "$ALIAS_FILE" || true)
+      # Look up alias by ifIndex in the pre-collected alias file
+      alias_line=$(grep -E "(IF-MIB::ifAlias|1\.3\.6\.1\.2\.1\.31\.1\.1\.1\.18)\.${ifIndex} = " "$ALIAS_FILE" || true)
       ifAlias=$(snmp_str "$alias_line")
 
       if [ -n "$ifAlias" ]; then
@@ -337,38 +386,37 @@ process_device() {
   rm -f "$TMPFILE" "$ALIAS_FILE"
 
   # ---- 3. IPv4 addresses ----------------------------------------------------
-  # IP-MIB::ipAdEntAddr  1.3.6.1.2.1.4.20.1.1
-  # IP-MIB::ipAdEntIfIndex 1.3.6.1.2.1.4.20.1.2
-  # IP-MIB::ipAdEntNetMask 1.3.6.1.2.1.4.20.1.3
+  # IP-MIB::ipAdEntAddr / ipAdEntIfIndex / ipAdEntNetMask
+  # Accept both MIB and numeric OID output.
   echo "Walking IPv4 addresses..."
   TMPFILE=$(mktemp)
-  snmpwalk -On -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" 1.3.6.1.2.1.4.20.1 \
+  snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" IP-MIB::ipAdEntAddr \
     2>/dev/null > "$TMPFILE" || true
-  ipv4_count=$(grep -cE '\.1\.3\.6\.1\.2\.1\.4\.20\.1\.1\.' "$TMPFILE" || true)
-  echo "  Found $ipv4_count IPv4 address entries"
+  ipv4_count=$(grep -c 'IpAddress:' "$TMPFILE" 2>/dev/null || echo "0")
+  echo "  Found $ipv4_count IPv4 address(es) via SNMP"
+  dbg "ipAdEntAddr raw:"; [ "$DEBUG" -eq 1 ] && head -3 "$TMPFILE" | sed 's/^/  [raw] /' >&2 || true
 
   if [ "$ipv4_count" -eq 0 ]; then
-    echo "  Warning: no IPv4 addresses returned. Check community/ACL."
+    echo "  Warning: no IPv4 addresses returned – check community/ACL."
   fi
 
   while IFS= read -r line; do
-    # .1.3.6.1.2.1.4.20.1.1.10.90.15.250 = IpAddress: 10.90.15.250
-    if echo "$line" | grep -qE '\.1\.3\.6\.1\.2\.1\.4\.20\.1\.1\.[0-9.]+ = IpAddress: [0-9.]+'; then
+    # IP-MIB::ipAdEntAddr.10.0.0.1 = IpAddress: 10.0.0.1
+    if echo "$line" | grep -qE '(IP-MIB::ipAdEntAddr|1\.3\.6\.1\.2\.1\.4\.20\.1\.1)\.[0-9.]+ = IpAddress: [0-9.]+'; then
       ip=$(echo "$line" | sed 's/.*IpAddress: //')
 
-      # ifIndex: .1.3.6.1.2.1.4.20.1.2.<ip>
-      idx_line=$(grep -E "\.1\.3\.6\.1\.2\.1\.4\.20\.1\.2\.${ip} " "$TMPFILE" || true)
+      idx_line=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" \
+        "IP-MIB::ipAdEntIfIndex.$ip" 2>/dev/null || true)
       echo "$idx_line" | grep -qE 'INTEGER: [0-9]+' || continue
       ifIndex=$(echo "$idx_line" | sed 's/.*INTEGER: //')
 
-      # Interface name via ifDescr numeric OID
-      ifName=$(snmpget -On -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" \
-        "1.3.6.1.2.1.2.2.1.2.${ifIndex}" 2>/dev/null \
+      ifName=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" \
+        "IF-MIB::ifDescr.$ifIndex" 2>/dev/null \
         | sed 's/.*STRING: //; s/^"//; s/"$//')
       [ -z "$ifName" ] && continue
 
-      # Subnet mask from same table: .1.3.6.1.2.1.4.20.1.3.<ip>
-      mask_line=$(grep -E "\.1\.3\.6\.1\.2\.1\.4\.20\.1\.3\.${ip} " "$TMPFILE" || true)
+      mask_line=$(snmpget -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" \
+        "IP-MIB::ipAdEntNetMask.$ip" 2>/dev/null || true)
       if echo "$mask_line" | grep -qE 'IpAddress: [0-9.]+'; then
         mask=$(echo "$mask_line" | sed 's/.*IpAddress: //')
         prefix=$(mask_to_prefix "$mask")
