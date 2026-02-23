@@ -109,19 +109,15 @@ nb_urlencode() {
 
 # normalize_ipv6 raw  → canonical compressed IPv6 string
 # Handles two formats emitted by net-snmp:
-#   1. Standard:  fd68:1e02:dc1a:ffff::1
-#   2. Byte-pair: fd:68:1e:02:dc:1a:ff:ff:00:00:00:00:00:00:00:01  (16 colon-separated hex bytes)
+#   1. Byte-pair (RouterOS/Aruba): fd:68:1e:02:dc:1a:ff:ff:00:00:00:00:00:00:00:01
+#      Detected as: exactly 16 groups of exactly 2 hex chars separated by colons.
+#   2. Standard notation: fd68:1e02:dc1a:ffff::1  (anything else)
 # Returns empty string on any parse failure so callers can skip bad addresses.
 normalize_ipv6() {
   local raw="$1"
-  # If raw contains only 1-4 hex char groups (standard notation), leave it alone
-  if echo "$raw" | grep -qE '^[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){2,}(::|$)' || \
-     echo "$raw" | grep -qE '^::' || \
-     ! echo "$raw" | grep -qE '^([0-9a-fA-F]{2}:){15}[0-9a-fA-F]{2}$'; then
-    # Looks like standard notation already – just normalise via python3
-    python3 -c "import ipaddress; print(str(ipaddress.ip_address('$raw')))" 2>/dev/null || echo ""
-  else
-    # Byte-pair format: strip colons → 32 hex chars → group into 4-char words → compress
+  # Detect byte-pair format FIRST: exactly 16 two-hex-digit groups separated by colons
+  if echo "$raw" | grep -qE '^([0-9a-fA-F]{2}:){15}[0-9a-fA-F]{2}$'; then
+    # Byte-pair → strip colons → 32 hex chars → group into 4-char words → compress
     python3 -c "
 import ipaddress, sys
 raw = '$raw'.replace(':', '')
@@ -130,6 +126,9 @@ if len(raw) != 32:
 groups = [raw[i:i+4] for i in range(0, 32, 4)]
 print(str(ipaddress.ip_address(':'.join(groups))))
 " 2>/dev/null || echo ""
+  else
+    # Standard notation – normalise via python3 (handles ::, leading zeros, etc.)
+    python3 -c "import ipaddress; print(str(ipaddress.ip_address('$raw')))" 2>/dev/null || echo ""
   fi
 }
 
@@ -279,10 +278,16 @@ process_device() {
   fi
 
   # ------------------------------------------------------------------
-  # 2. Walk interfaces (IF-MIB::ifDescr)
-  #    We use a temp file to avoid subshell scoping issues with pipes.
+  # 2. Walk interfaces (IF-MIB::ifDescr + IF-MIB::ifAlias for descriptions)
+  #    We use temp files to avoid subshell scoping issues with pipes.
   # ------------------------------------------------------------------
   echo "Walking interfaces..."
+
+  # Pre-collect ifAlias (operator-configured description) indexed by ifIndex.
+  # IF-MIB::ifAlias.4 = STRING: "uplink to core"
+  ALIAS_FILE=$(mktemp)
+  snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" IF-MIB::ifAlias 2>/dev/null > "$ALIAS_FILE" || true
+
   TMPFILE=$(mktemp)
   snmpwalk -v2c -c "$SNMP_COMMUNITY" "$SNMP_TARGET" IF-MIB::ifDescr 2>/dev/null > "$TMPFILE" || true
 
@@ -293,10 +298,23 @@ process_device() {
       ifName=$(snmp_str "$line")
       [ -z "$ifName" ] && continue
 
-      payload=$(jq -n \
-        --arg name "$ifName" \
-        --argjson dev "$DEVICE_ID" \
-        '{name:$name, device:$dev, type:"other"}')
+      # Look up the alias for this ifIndex from the pre-collected file
+      alias_line=$(grep -E "IF-MIB::ifAlias\.${ifIndex} = " "$ALIAS_FILE" || true)
+      ifAlias=$(snmp_str "$alias_line")
+
+      # Build payload – include description only when the alias is non-empty
+      if [ -n "$ifAlias" ]; then
+        payload=$(jq -n \
+          --arg name "$ifName" \
+          --argjson dev "$DEVICE_ID" \
+          --arg desc "$ifAlias" \
+          '{name:$name, device:$dev, type:"other", description:$desc}')
+      else
+        payload=$(jq -n \
+          --arg name "$ifName" \
+          --argjson dev "$DEVICE_ID" \
+          '{name:$name, device:$dev, type:"other"}')
+      fi
 
       enc_name=$(nb_urlencode "$ifName")
       iface_id=$(nb_get "dcim/interfaces" "device_id=${DEVICE_ID}&name=${enc_name}" \
@@ -306,7 +324,9 @@ process_device() {
         resp=$(nb_api POST dcim/interfaces "$payload")
         new_id=$(echo "$resp" | jq -r '.id // empty')
         if [ -n "$new_id" ] && [ "$new_id" != "null" ]; then
-          echo "  Created interface $ifName (id=$new_id)"
+          [ -n "$ifAlias" ] \
+            && echo "  Created interface $ifName (id=$new_id) desc=\"$ifAlias\"" \
+            || echo "  Created interface $ifName (id=$new_id)"
         else
           echo "  ERROR creating interface $ifName: $(echo "$resp" | jq -c .)"
         fi
@@ -314,14 +334,17 @@ process_device() {
         resp=$(nb_api PATCH "dcim/interfaces/$iface_id" "$payload")
         chk=$(echo "$resp" | jq -r '.id // empty')
         if [ -n "$chk" ] && [ "$chk" != "null" ]; then
-          echo "  Updated interface $ifName (id=$iface_id)"
+          [ -n "$ifAlias" ] \
+            && echo "  Updated interface $ifName (id=$iface_id) desc=\"$ifAlias\"" \
+            || echo "  Updated interface $ifName (id=$iface_id)"
         else
           echo "  ERROR updating interface $ifName: $(echo "$resp" | jq -c .)"
         fi
       fi
     fi
   done < "$TMPFILE"
-  rm -f "$TMPFILE"
+  rm -f "$TMPFILE" "$ALIAS_FILE"
+
 
   # ------------------------------------------------------------------
   # 3. Walk IPv4 addresses
