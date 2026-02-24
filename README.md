@@ -85,12 +85,11 @@ FullCalendar week/month/day view. Click any time slot to reserve a resource wind
 
 ## Installation & Setup
 
-### 1. Clone and branch
+### 1. Clone the repository
 
 ```bash
 git clone <repo-url>
 cd direttore
-git checkout feature/react-fastapi-frontend
 ```
 
 ### 2. Configure environment
