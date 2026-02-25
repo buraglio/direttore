@@ -356,18 +356,20 @@ The `snmp_to_netbox.sh` bash script walks a live network device via SNMP and pus
 
 ---
 
-## Existing Nornir Workflow
+## Physical Network Automation (NetBox + Nornir + Unimus)
 
-The original network automation pipeline is unchanged and can be used alongside the new web UI:
+In addition to virtual infrastructure, Direttore manages physical networking hardware (Juniper, Cisco, Aruba, MikroTik, FS, IP Infusion, Palo Alto) using a closed-loop automation architecture:
+
+1. **NetBox**: The "Source of Truth" detailing intended state (VLANs, IPs, devices).
+2. **Nornir**: The orchestration engine that fetches NetBox data, renders Jinja2 templates via NAPALM/Netmiko, and pushes config.
+3. **Unimus**: The auditor that automatically syncs from NetBox, backs up the operational state, and detects configuration drift.
+
+For the detailed, step-by-step implementation plan (including directory structures, Junos examples, and Netmiko platform mapping), please read the **[Network Automation Implementation Plan](docs/network_automation_plan.md)**.
 
 ```bash
 source .venv/bin/activate
-
-# List all devices from NetBox
-nr-inventory --list
-
-# Deploy BGP config to Juniper devices
-python deploy.py --groups juniper
+# Example: Deploy provisioned VLANs to all Active Juniper switches
+python nornir_automation/generate_and_push.py
 ```
 
 ---
