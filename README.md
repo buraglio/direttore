@@ -108,8 +108,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-api.txt
 
-# Start the API server
-PROXMOX_MOCK=true uvicorn api.main:app --reload --port 8000
+# Start the API server on the IPv6 loopback
+PROXMOX_MOCK=true uvicorn api.main:app --host ::1 --reload --port 8000
 ```
 
 API docs available at **http://localhost:8000/docs**
