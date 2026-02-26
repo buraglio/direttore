@@ -98,28 +98,24 @@ class NICConfig(BaseModel):
     def to_proxmox_ipconfig_string(self) -> Optional[str]:
         """
         Return the ipconfig{n} value for cloud-init VMs, or None.
-
-        Only populated when the user explicitly sets a static IP or IPv6
-        address.  We deliberately skip ip='dhcp' here because:
-          - ISO-based VMs have no cloud-init drive and Proxmox rejects the param.
-          - Cloud-init VMs that want DHCP should leave the field blank (Proxmox
-            defaults to DHCP when no ipconfig is provided).
-        Callers that genuinely want to pass dhcp via cloud-init can set
-        ip='dhcp' and gw or ip6 alongside it; without at least a gateway or
-        IPv6 address the field is useless anyway.
         """
         parts: list[str] = []
-        # Include ip only when it looks like a real static address (contains '/')
-        if self.ip and "/" in self.ip:
+        if self.ip is not None and "/" in self.ip:
             parts.append(f"ip={self.ip}")
-        if self.gw and parts:          # gateway only meaningful with a static ip
-            parts.append(f"gw={self.gw}")
-        if self.ip6 and self.ip6 not in ("auto", "dhcp6"):
+            if self.gw:
+                parts.append(f"gw={self.gw}")
+        elif self.ip in ("dhcp", "auto"):
+            parts.append(f"ip={self.ip}")
+
+        if self.ip6 is not None and "/" in self.ip6:
             parts.append(f"ip6={self.ip6}")
-        elif self.ip6 in ("auto", "dhcp6"):
-            parts.append(f"ip6={self.ip6}")
-        if self.gw6:
-            parts.append(f"gw6={self.gw6}")
+            if self.gw6:
+                parts.append(f"gw6={self.gw6}")
+        elif self.ip6 in ("dhcp", "dhcp6", "auto"):
+            # Proxmox uses "dhcp" or "auto" for IPv6. "dhcp6" is often a typo. We'll send "dhcp" if they passed "dhcp6".
+            val = "dhcp" if self.ip6 == "dhcp6" else self.ip6
+            parts.append(f"ip6={val}")
+
         return ",".join(parts) if parts else None
 
     # Backward-compat alias
@@ -207,12 +203,18 @@ class LXCNICConfig(BaseModel):
         # Use unique interface names: eth0, eth1, … based on the NIC position
         iface_name = self.name if iface_index == 0 else f"eth{iface_index}"
         s = f"name={iface_name},bridge={self.bridge},ip={self.ip}"
-        if self.gw:
+        
+        # Don't append gw if ip is auto or dhcp
+        if self.gw and self.ip not in ("dhcp", "auto"):
             s += f",gw={self.gw}"
+
         if self.ip6:
-            s += f",ip6={self.ip6}"
-            if self.gw6:            # gw6 only meaningful when ip6 is set
+            val = "dhcp" if self.ip6 == "dhcp6" else self.ip6
+            s += f",ip6={val}"
+            # Don't append gw6 if ip6 is auto or dhcp
+            if self.gw6 and self.ip6 not in ("dhcp", "dhcp6", "auto"):
                 s += f",gw6={self.gw6}"
+                
         if self.vlan is not None:
             s += f",tag={self.vlan}"
         return s
