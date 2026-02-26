@@ -8,8 +8,8 @@ export default defineConfig({
     // Allow requests from nginx reverse proxy (any hostname).
     // Vite's default host check blocks non-localhost Host headers.
     allowedHosts: 'all',
-    // Bind to all interfaces (true = 0.0.0.0 and ::) so it's reachable on IPv6 hosts
-    host: true,
+    // Bind exclusively to the IPv6 localhost so internal traffic routes through nginx
+    host: '::1',
     // Proxy /api/* to the FastAPI backend when running Vite directly
     // (i.e. http://host:5173). Not needed when accessed through nginx.
     proxy: {
