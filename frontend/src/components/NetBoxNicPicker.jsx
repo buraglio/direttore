@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
     Modal, Tabs, TextInput, Table, Badge, Alert, Loader, Stack, Group,
     Text, Button, ActionIcon, Tooltip, SegmentedControl, ThemeIcon,
-    ScrollArea,
+    ScrollArea, LoadingOverlay,
 } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import {
     IconCloud, IconAlertTriangle, IconCheck, IconNetwork,
     IconSearch, IconLayersLinked,
 } from '@tabler/icons-react';
-import { checkNetBoxStatus, getIPAddresses, getPrefixes, getVlans } from '../api/netbox';
+import { checkNetBoxStatus, getIPAddresses, getPrefixes, getVlans, allocateIP } from '../api/netbox';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -318,24 +319,54 @@ function VlansTab({ onSelect }) {
 export default function NetBoxNicPicker({ opened, onClose, onApply, nicIndex }) {
     const statusQ = useNetBoxStatus();
     const reachable = statusQ.data?.reachable;
+    const [allocating, setAllocating] = useState(false);
 
-    const handleSelect = ({ type, data }) => {
+    const handleSelect = async ({ type, data }) => {
         if (type === 'ip') {
             const isV6 = (data.family === 6);
             onApply(isV6
                 ? { ip6: data.address, gw6: data.prefix_gateway || '', dns: data.dns_name || '' }
                 : { ip: data.address, gw: data.prefix_gateway || '', dns: data.dns_name || '' }
             );
+            onClose();
         } else if (type === 'prefix') {
-            const isV6 = (data.family === 6);
-            onApply(isV6
-                ? { ip6: 'auto', gw6: data.gateway || '', dns: data.dns_servers || '' }
-                : { ip: 'dhcp', gw: data.gateway || '', dns: data.dns_servers || '' }
-            );
+            try {
+                setAllocating(true);
+                const ipData = await allocateIP(data.id);
+                const isV6 = (ipData.family === 6);
+                onApply(isV6
+                    ? { ip6: ipData.address, gw6: data.gateway || '', dns: data.dns_servers || '' }
+                    : { ip: ipData.address, gw: data.gateway || '', dns: data.dns_servers || '' }
+                );
+                notifications.show({
+                    title: 'IP Allocated',
+                    message: `Allocated ${ipData.address} from prefix ${data.prefix}`,
+                    color: 'green',
+                    icon: <IconCheck size={14} />,
+                });
+                onClose();
+            } catch (err) {
+                console.error("Failed to allocate IP", err);
+                notifications.show({
+                    title: 'Allocation Failed',
+                    message: err.response?.data?.detail || err.message || 'Could not allocate IP from NetBox',
+                    color: 'red',
+                    icon: <IconAlertTriangle size={14} />,
+                });
+                // Fallback to inserting the prefix CIDR
+                const isV6 = (data.family === 6);
+                onApply(isV6
+                    ? { ip6: data.prefix, gw6: data.gateway || '', dns: data.dns_servers || '' }
+                    : { ip: data.prefix, gw: data.gateway || '', dns: data.dns_servers || '' }
+                );
+                onClose();
+            } finally {
+                setAllocating(false);
+            }
         } else if (type === 'vlan') {
             onApply({ vlan: data.vid });
+            onClose();
         }
-        onClose();
     };
 
     return (
@@ -363,10 +394,11 @@ export default function NetBoxNicPicker({ opened, onClose, onApply, nicIndex }) 
             }
             size="xl"
             styles={{
-                content: { background: 'var(--surface)', border: '1px solid var(--border)' },
+                content: { background: 'var(--surface)', border: '1px solid var(--border)', position: 'relative' },
                 header: { background: 'var(--surface)' },
             }}
         >
+            <LoadingOverlay visible={allocating} zIndex={1000} overlayProps={{ radius: "sm", blur: 2 }} />
             {statusQ.isLoading && (
                 <Group justify="center" py="xl">
                     <Loader size="sm" color="cyan" />

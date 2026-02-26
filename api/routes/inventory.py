@@ -2,6 +2,8 @@
 """FastAPI router — NetBox inventory proxy."""
 
 from typing import Any, Dict, List, Optional
+from datetime import datetime
+from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Query
 import httpx
 
@@ -267,6 +269,51 @@ async def list_prefixes(
             return [_slim_prefix(p) for p in r.json().get("results", [])]
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"NetBox error: {e}")
+
+from pydantic import BaseModel
+from datetime import datetime
+
+class AllocateIPRequest(BaseModel):
+    description: Optional[str] = None
+
+@router.post("/prefixes/{prefix_id}/allocate")
+async def allocate_prefix_ip(prefix_id: int, req: AllocateIPRequest) -> Dict[str, Any]:
+    """Allocate the next available IP inside a specific prefix in NetBox."""
+    desc = req.description or f"Allocated by Direttore on {datetime.now().isoformat()}"
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            r = await client.post(
+                f"{settings.netbox_url}/api/ipam/prefixes/{prefix_id}/available-ips/",
+                json={"description": desc},
+                headers=_nb_headers(),
+            )
+            if r.status_code == 204 or r.status_code >= 400:
+                # If error or 204 no content
+                pass
+            r.raise_for_status()
+            data = r.json()
+            if isinstance(data, list) and len(data) > 0:
+                data = data[0]
+            
+            # Fetch the prefix to get the gateway
+            prefix_r = await client.get(
+                f"{settings.netbox_url}/api/ipam/prefixes/{prefix_id}/",
+                headers=_nb_headers()
+            )
+            gate = None
+            if prefix_r.status_code == 200:
+                p_data = _slim_prefix(prefix_r.json())
+                gate = p_data.get("gateway")
+
+            return _slim_ip(data, gateway=gate)
+    except httpx.HTTPError as e:
+        detail = str(e)
+        if hasattr(e, "response") and e.response is not None:
+            try:
+                detail = e.response.json()
+            except Exception:
+                pass
+        raise HTTPException(status_code=502, detail=f"NetBox error: {detail}")
 
 
 # ---------------------------------------------------------------------------
