@@ -5,38 +5,20 @@ import datetime
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from icalendar import Calendar, Event, vText, vDatetime
 
 from api.db import get_db
 from api.models import Reservation, ReservationStatus, ResourceType
+from api.schemas.reservations import ReservationCreate, ReservationUpdate
 
 router = APIRouter(prefix="/api/reservations", tags=["reservations"])
 
 
 # ---------------------------------------------------------------------------
-# Schemas
+# Helpers
 # ---------------------------------------------------------------------------
-
-class ReservationCreate(BaseModel):
-    title: str
-    requester: str = "anonymous"
-    resource_type: ResourceType = ResourceType.vm
-    proxmox_node: Optional[str] = None
-    vmid: Optional[int] = None
-    start_dt: datetime.datetime
-    end_dt: datetime.datetime
-    notes: Optional[str] = None
-
-
-class ReservationUpdate(BaseModel):
-    title: Optional[str] = None
-    status: Optional[ReservationStatus] = None
-    proxmox_node: Optional[str] = None
-    vmid: Optional[int] = None
-    notes: Optional[str] = None
 
 
 def _to_dict(r: Reservation) -> Dict[str, Any]:
