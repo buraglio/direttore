@@ -1,0 +1,21 @@
+[Unit]
+Description=Direttore FastAPI Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=buraglio
+Group=buraglio
+WorkingDirectory=/opt/direttore
+# Uses the python virtual environment to run Uvicorn.
+# Binds to IPv6 loopback (::1) port 8000.
+ExecStart=/opt/direttore/.venv/bin/uvicorn api.main:app --host ::1 --port 8000
+
+# Optionally set environment variables here, or pass an env file:
+# EnvironmentFile=/opt/direttore/api/.env
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

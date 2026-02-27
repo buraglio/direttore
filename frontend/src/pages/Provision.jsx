@@ -273,7 +273,8 @@ export default function Provision() {
             setStep(5);
         },
         onError: (e) => {
-            notifications.show({ color: 'red', title: 'Provision failed', message: e.message });
+            const msg = e.response?.data?.detail || e.message;
+            notifications.show({ color: 'red', title: 'Provision failed', message: msg });
         },
     });
 
