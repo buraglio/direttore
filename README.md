@@ -49,7 +49,10 @@ Browse all VMs and LXC containers across nodes. Start, stop, and delete resource
      - NIC model (VMs: VirtIO / E1000 / RTL8139)
      - Dual-stack IP: **IPv4 / CIDR** (or `dhcp`) + **IPv6 / Prefix** (or `auto` / `dhcp6`)
      - Default gateways (IPv4 / IPv6) and DNS servers
-     - ☁ **Populate from NetBox**: Integrates with your NetBox instance to provision IPs, Prefix gateways, and VLANs directly into the wizard.
+     - ☁ **NetBox IPAM Integration**: Connects to your NetBox instance to browse and select IP addresses, Prefix gateways, and VLANs directly in the wizard.
+       - Automatically allocates the next available IP address from a selected Prefix.
+       - Smart IPv6 handling (avoids network addresses like `::` and `.0`).
+       - Auto-detects explicit default gateways from NetBox records, or gracefully assumes `.1` / `::1` as gateways when absent.
 5. **Review** — confirm all settings including per-NIC summary table
 6. **Progress** — live task progress bar polling the Proxmox UPID
 
@@ -261,6 +264,26 @@ sudo nginx -t && sudo systemctl reload nginx
 > **No TLS yet?** `direttore.conf` includes a commented-out plain HTTP server block at the bottom — use that for internal networks or staging.
 
 > **Docker Compose:** replace `127.0.0.1:8000` / `127.0.0.1:5173` with `api:8000` / `frontend:80` and add `resolver 127.0.0.11 valid=10s;` inside the server block.
+
+---
+
+## Systemd Services (Production)
+
+For bare-metal production deployments, Direttore includes `systemd` service files to keep the API and Vite server running in the background.
+
+```bash
+# 1. Copy the unit files into systemd
+sudo cp systemd/direttore-api.service /etc/systemd/system/
+sudo cp systemd/direttore-frontend.service /etc/systemd/system/
+
+# 2. Reload daemon, enable, and start
+sudo systemctl daemon-reload
+sudo systemctl enable --now direttore-api
+sudo systemctl enable --now direttore-frontend
+
+# 3. Check status
+sudo systemctl status direttore-api
+```
 
 ---
 

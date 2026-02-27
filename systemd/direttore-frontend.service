@@ -1,0 +1,23 @@
+[Unit]
+Description=Direttore Vite Frontend
+After=network.target
+
+[Service]
+Type=simple
+User=buraglio
+Group=buraglio
+WorkingDirectory=/opt/direttore/frontend
+
+# Ensure npm and vite are in the path
+Environment="PATH=/usr/bin:/usr/local/bin:/opt/node/bin"
+
+# You can use "npm run start" or "npm run preview" to serve the production build,
+# or "npm run dev" to run the development server. 
+# Vite is configured to bind to ::1 under "server" in vite.config.js
+ExecStart=/usr/bin/npm run dev
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
