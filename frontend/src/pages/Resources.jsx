@@ -140,7 +140,7 @@ export default function Resources() {
                     data={nodeOptions}
                     value={node}
                     onChange={setActiveNode}
-                    style={{ width: 200 }}
+                    style={{ minWidth: 200 }}
                 />
             </Group>
 
