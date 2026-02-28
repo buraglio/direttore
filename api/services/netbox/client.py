@@ -9,7 +9,7 @@ import httpx
 
 from api.config import settings
 
-TIMEOUT = 10  # seconds
+TIMEOUT = 10
 
 
 def _nb_headers() -> dict[str, str]:
@@ -24,12 +24,10 @@ def _nb_headers() -> dict[str, str]:
 # Data transformers
 # ---------------------------------------------------------------------------
 
-
-def _extract_family(obj: Dict[str, Any]) -> Any:
+def _extract_family(obj: dict[str, Any]) -> Any:
     """Extract the address family value from a NetBox object."""
     family_val = obj.get("family", {})
     return family_val.get("value") if isinstance(family_val, dict) else family_val
-
 
 def slim_ip(addr: dict[str, Any], gateway: str | None) -> dict[str, Any]:
     """Return a slim, frontend-friendly representation of a NetBox IP address."""
@@ -45,7 +43,6 @@ def slim_ip(addr: dict[str, Any], gateway: str | None) -> dict[str, Any]:
         "prefix_gateway": gateway,
         "custom_fields": addr.get("custom_fields") or {},
     }
-
 
 def slim_prefix(p: dict[str, Any]) -> dict[str, Any]:
     """Return a slim prefix representation including gateway and DNS hints."""
@@ -74,7 +71,6 @@ def slim_prefix(p: dict[str, Any]) -> dict[str, Any]:
         "custom_fields": cf,
     }
 
-
 def slim_vlan(v: dict[str, Any]) -> dict[str, Any]:
     """Return a slim VLAN representation."""
     return {
@@ -90,11 +86,9 @@ def slim_vlan(v: dict[str, Any]) -> dict[str, Any]:
         "custom_fields": v.get("custom_fields") or {},
     }
 
-
 # ---------------------------------------------------------------------------
 # Gateway / prefix matching helpers
 # ---------------------------------------------------------------------------
-
 
 def gateway_from_prefix(prefix: dict[str, Any]) -> str | None:
     """Extract a gateway value from a prefix object's custom_fields or description."""
@@ -106,7 +100,6 @@ def gateway_from_prefix(prefix: dict[str, Any]) -> str | None:
     if desc and "/" not in desc and ("." in desc or ":" in desc):
         return desc.strip()
     return None
-
 
 def match_gateway(
     address: str, prefix_gw_map: dict[str, str | None]
@@ -131,11 +124,9 @@ def match_gateway(
             continue
     return best
 
-
 # ---------------------------------------------------------------------------
 # NetBox API calls
 # ---------------------------------------------------------------------------
-
 
 async def check_status() -> dict[str, Any]:
     """Quick reachability check against the configured NetBox instance."""
@@ -157,7 +148,6 @@ async def check_status() -> dict[str, Any]:
     except Exception as e:
         return {"reachable": False, "reason": str(e)}
 
-
 async def fetch_devices() -> list[dict[str, Any]]:
     """Fetch all devices from NetBox."""
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -167,7 +157,6 @@ async def fetch_devices() -> list[dict[str, Any]]:
         )
         r.raise_for_status()
         return r.json().get("results", [])
-
 
 async def _bulk_prefix_gateway_map(
     client: httpx.AsyncClient,
@@ -194,7 +183,6 @@ async def _bulk_prefix_gateway_map(
         }
     except Exception:
         return {}
-
 
 async def fetch_ip_addresses(
     params: dict[str, Any],
@@ -223,7 +211,6 @@ async def fetch_ip_addresses(
             results.append(slim_ip(addr, gw))
         return results
 
-
 async def fetch_prefixes(params: dict[str, Any]) -> list[dict[str, Any]]:
     """Fetch prefixes from NetBox, transformed to slim representation."""
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -234,7 +221,6 @@ async def fetch_prefixes(params: dict[str, Any]) -> list[dict[str, Any]]:
         )
         r.raise_for_status()
         return [slim_prefix(p) for p in r.json().get("results", [])]
-
 
 async def fetch_vlans(params: dict[str, Any]) -> list[dict[str, Any]]:
     """Fetch VLANs from NetBox, transformed to slim representation."""
