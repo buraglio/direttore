@@ -91,6 +91,14 @@ def create_vm(node: str, req: CreateVMRequest) -> dict[str, Any]:
     for idx, nic in enumerate(req.nics):
         params[f"net{idx}"] = nic.to_proxmox_net_string()
 
+    # Cloud-init User/Auth Configuration
+    if req.username:
+        params["ciuser"] = req.username
+    if req.password:
+        params["cipassword"] = req.password
+    if req.ssh_key:
+        params["sshkeys"] = req.ssh_key
+
     if req.iso:
         params["cdrom"] = req.iso
         params["scsi0"] = f"{req.storage}:vm-{req.vmid}-disk-0,size={req.disk}"
