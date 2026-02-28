@@ -1,45 +1,26 @@
-#!/usr/bin/env python3
 """FastAPI router — resource reservations and iCAL export."""
 
 import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from icalendar import Calendar, Event, vText, vDatetime
 
 from api.db import get_db
 from api.models import Reservation, ReservationStatus, ResourceType
+from api.schemas.reservations import ReservationCreate, ReservationUpdate
 
 router = APIRouter(prefix="/api/reservations", tags=["reservations"])
 
 
 # ---------------------------------------------------------------------------
-# Schemas
+# Helpers
 # ---------------------------------------------------------------------------
 
-class ReservationCreate(BaseModel):
-    title: str
-    requester: str = "anonymous"
-    resource_type: ResourceType = ResourceType.vm
-    proxmox_node: Optional[str] = None
-    vmid: Optional[int] = None
-    start_dt: datetime.datetime
-    end_dt: datetime.datetime
-    notes: Optional[str] = None
 
-
-class ReservationUpdate(BaseModel):
-    title: Optional[str] = None
-    status: Optional[ReservationStatus] = None
-    proxmox_node: Optional[str] = None
-    vmid: Optional[int] = None
-    notes: Optional[str] = None
-
-
-def _to_dict(r: Reservation) -> Dict[str, Any]:
+def _to_dict(r: Reservation) -> dict[str, Any]:
     return {
         "id": r.id,
         "title": r.title,
@@ -60,10 +41,10 @@ def _to_dict(r: Reservation) -> Dict[str, Any]:
 
 @router.get("/")
 async def list_reservations(
-    start: Optional[str] = None,
-    end: Optional[str] = None,
+    start: str | None = None,
+    end: str | None = None,
     db: AsyncSession = Depends(get_db),
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """List reservations, optionally filtered by date range."""
     stmt = select(Reservation)
     if start:
@@ -77,7 +58,7 @@ async def list_reservations(
 @router.post("/", status_code=201)
 async def create_reservation(
     body: ReservationCreate, db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create a reservation after checking for conflicts on the same node."""
     if body.end_dt <= body.start_dt:
         raise HTTPException(status_code=400, detail="end_dt must be after start_dt")
@@ -109,7 +90,7 @@ async def create_reservation(
 @router.get("/{reservation_id}")
 async def get_reservation(
     reservation_id: int, db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     r = await db.get(Reservation, reservation_id)
     if not r:
         raise HTTPException(status_code=404, detail="Reservation not found")
@@ -119,7 +100,7 @@ async def get_reservation(
 @router.patch("/{reservation_id}")
 async def update_reservation(
     reservation_id: int, body: ReservationUpdate, db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     r = await db.get(Reservation, reservation_id)
     if not r:
         raise HTTPException(status_code=404, detail="Reservation not found")

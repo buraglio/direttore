@@ -4,7 +4,6 @@ import {
     Box, Title, Text, Select, Tabs, Table, Badge, Group, ActionIcon,
     Skeleton, Button, Tooltip, Paper, Alert,
 } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import {
     IconPlayerPlay, IconPlayerStop, IconTrash, IconRefresh,
 } from '@tabler/icons-react';
@@ -111,7 +110,6 @@ export default function Resources() {
             });
             setTimeout(() => { qc.invalidateQueries(['vms', node]); qc.invalidateQueries(['lxc', node]); }, 1500);
         },
-        onError: (e) => notifications.show({ color: 'red', title: 'Error', message: e.message }),
     });
 
     const nodeOptions = nodes.map(n => ({ value: n.node, label: n.node }));
@@ -142,7 +140,7 @@ export default function Resources() {
                     data={nodeOptions}
                     value={node}
                     onChange={setActiveNode}
-                    style={{ width: 200 }}
+                    style={{ minWidth: 200 }}
                 />
             </Group>
 

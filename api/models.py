@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """SQLAlchemy ORM models for Direttore."""
 
 import datetime

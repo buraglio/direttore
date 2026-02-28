@@ -1,140 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import {
-    Box, Title, Text, Stepper, Button, Group, Select, TextInput,
-    NumberInput, Paper, Stack, Badge, Progress, Alert, Divider,
-    ActionIcon, Tooltip, Table, ThemeIcon,
-} from '@mantine/core';
-import { useForm } from '@mantine/form';
-import { notifications } from '@mantine/notifications';
-import {
-    IconServer, IconBox, IconCheck, IconX, IconRocket,
-    IconPlus, IconTrash, IconNetwork, IconDatabase, IconCloud,
-} from '@tabler/icons-react';
-import {
-    getNodes, getTemplates, getNetworks, getStorage,
-    createVM, createContainer, pollTask,
-} from '../api/proxmox';
-import NetBoxNicPicker from '../components/NetBoxNicPicker';
+import ProvisioningFeature from '../features/provisioning/ProvisioningFeature';
 
-
-const VMID_DEFAULT = 1000 + Math.floor(Math.random() * 8000);
-
-const NIC_MODELS = [
-    { value: 'virtio', label: 'VirtIO (recommended)' },
-    { value: 'e1000', label: 'Intel E1000' },
-    { value: 'rtl8139', label: 'Realtek RTL8139' },
-];
-
-function bytesToGB(bytes) {
-    return bytes ? (bytes / 1_073_741_824).toFixed(0) : '?';
-}
-
-// ── NIC card component ────────────────────────────────────────────────────────
-function NicCard({ nic, index, onUpdate, onRemove, canRemove, bridgeOptions, isVM, onPickNetBox }) {
-    return (
-        <Paper p="md" radius="md" withBorder style={{ borderColor: 'var(--border)', background: 'var(--surface2)' }}>
-            <Group justify="space-between" mb="sm">
-                <Group gap="xs">
-                    <ThemeIcon size="sm" color="cyan" variant="light">
-                        <IconNetwork size={12} />
-                    </ThemeIcon>
-                    <Text size="sm" fw={600}>Interface {index} {index === 0 ? '(primary)' : ''}</Text>
-                </Group>
-                {canRemove && (
-                    <Tooltip label="Remove interface">
-                        <ActionIcon color="red" variant="subtle" size="sm" onClick={onRemove}>
-                            <IconTrash size={14} />
-                        </ActionIcon>
-                    </Tooltip>
-                )}
-                <Tooltip label="Populate from NetBox">
-                    <ActionIcon color="cyan" variant="subtle" size="sm" onClick={onPickNetBox}>
-                        <IconCloud size={14} />
-                    </ActionIcon>
-                </Tooltip>
-            </Group>
-
-            {/* Row 1: Bridge / VLAN / NIC model */}
-            <Group grow gap="sm" mb="sm">
-                <Select
-                    label="Bridge"
-                    data={bridgeOptions}
-                    value={nic.bridge}
-                    onChange={(v) => onUpdate({ ...nic, bridge: v })}
-                    placeholder="Select bridge"
-                />
-                <NumberInput
-                    label="VLAN ID"
-                    description="Leave empty for untagged"
-                    placeholder="None"
-                    min={1}
-                    max={4094}
-                    value={nic.vlan ?? ''}
-                    onChange={(v) => onUpdate({ ...nic, vlan: v === '' ? null : Number(v) })}
-                    allowDecimal={false}
-                    clearable
-                />
-                {isVM && (
-                    <Select
-                        label="NIC Model"
-                        data={NIC_MODELS}
-                        value={nic.model}
-                        onChange={(v) => onUpdate({ ...nic, model: v })}
-                    />
-                )}
-            </Group>
-
-            {/* Row 2: IPv4 address + IPv4 default gateway */}
-            <Group grow gap="sm" mb="sm">
-                <TextInput
-                    label="IPv4 / CIDR"
-                    description='e.g. "dhcp" or "10.0.0.5/24"'
-                    placeholder="dhcp"
-                    value={nic.ip}
-                    onChange={(e) => onUpdate({ ...nic, ip: e.currentTarget.value })}
-                />
-                <TextInput
-                    label="IPv4 Default Gateway"
-                    description="Leave empty for none"
-                    placeholder="10.0.0.1"
-                    value={nic.gw}
-                    onChange={(e) => onUpdate({ ...nic, gw: e.currentTarget.value })}
-                />
-            </Group>
-
-            {/* Row 3: IPv6 address + IPv6 default gateway */}
-            <Group grow gap="sm" mb="sm">
-                <TextInput
-                    label="IPv6 / Prefix"
-                    description='e.g. "auto" or "2001:db8::5/64"'
-                    placeholder="auto"
-                    value={nic.ip6}
-                    onChange={(e) => onUpdate({ ...nic, ip6: e.currentTarget.value })}
-                />
-                <TextInput
-                    label="IPv6 Default Gateway"
-                    description="Leave empty for none"
-                    placeholder="2001:db8::1"
-                    value={nic.gw6}
-                    onChange={(e) => onUpdate({ ...nic, gw6: e.currentTarget.value })}
-                />
-            </Group>
-
-            {/* Row 4: DNS servers */}
-            <TextInput
-                label="DNS Servers"
-                description="Space-separated, e.g. 1.1.1.1 2606:4700:4700::1111"
-                placeholder="1.1.1.1 8.8.8.8"
-                value={nic.dns}
-                onChange={(e) => onUpdate({ ...nic, dns: e.currentTarget.value })}
-            />
-        </Paper>
-    );
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
 export default function Provision() {
+<<<<<<< HEAD
+    return <ProvisioningFeature />;
+=======
     const [step, setStep] = useState(0);
     const [type, setType] = useState('vm');     // 'vm' | 'lxc'
     const [activeNode, setActiveNode] = useState(null);
@@ -634,4 +503,5 @@ export default function Provision() {
             />
         </Box>
     );
+>>>>>>> 6d7c0d87b61f060ea53d17cc0dafdb46f6368e58
 }

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Async SQLAlchemy database setup."""
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
