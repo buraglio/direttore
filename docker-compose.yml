@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     ports:
-      - "8000:8000"
+      - "[::1]:8000:8000"
     environment:
       - PROXMOX_MOCK=true
     env_file:
@@ -20,7 +20,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.frontend
     ports:
-      - "5173:80"
+      - "[::1]:5173:80"
     depends_on:
       - api
     restart: unless-stopped

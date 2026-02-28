@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """FastAPI router — NetBox inventory proxy."""
 
+<<<<<<< HEAD
 from typing import Any
+=======
+from typing import Any, Dict, List, Optional
+from datetime import datetime
+from pydantic import BaseModel
+>>>>>>> 6d7c0d87b61f060ea53d17cc0dafdb46f6368e58
 from fastapi import APIRouter, HTTPException, Query
 import httpx
 
@@ -94,6 +100,82 @@ async def list_prefixes(
         return await nb.fetch_prefixes(params)
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"NetBox error: {e}")
+
+from pydantic import BaseModel
+from datetime import datetime
+
+class AllocateIPRequest(BaseModel):
+    description: Optional[str] = None
+
+@router.post("/prefixes/{prefix_id}/allocate")
+async def allocate_prefix_ip(prefix_id: int, req: AllocateIPRequest) -> Dict[str, Any]:
+    """Allocate the next available IP inside a specific prefix in NetBox."""
+    desc = req.description or f"Allocated by Direttore on {datetime.now().isoformat()}"
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            # Fetch the prefix first to get any statically defined gateway
+            prefix_r = await client.get(
+                f"{settings.netbox_url}/api/ipam/prefixes/{prefix_id}/",
+                headers=_nb_headers()
+            )
+            gate = None
+            if prefix_r.status_code == 200:
+                p_data = _slim_prefix(prefix_r.json())
+                gate = p_data.get("gateway")
+
+            data = None
+            for _ in range(10):  # Retry loop to skip network/gateway addresses
+                r = await client.post(
+                    f"{settings.netbox_url}/api/ipam/prefixes/{prefix_id}/available-ips/",
+                    json={"description": desc},
+                    headers=_nb_headers(),
+                )
+                r.raise_for_status()
+                data = r.json()
+                if isinstance(data, list) and len(data) > 0:
+                    data = data[0]
+                
+                raw_ip = data.get("address", "").split("/")[0]
+                is_network = raw_ip.endswith("::") or raw_ip.endswith(".0")
+                is_potential_gw = raw_ip.endswith("::1") or raw_ip.endswith(".1")
+                
+                skip_msg = None
+                
+                if is_network:
+                    skip_msg = "Reserved (Network address skipped by Direttore)"
+                elif is_potential_gw:
+                    if gate:
+                        # Gateway already specified elsewhere, just skip this IP
+                        skip_msg = "Reserved (skipped ::1 or .1 by Direttore)"
+                    else:
+                        # No gateway specified! Let's assume this IS the gateway.
+                        skip_msg = "Allocated as gateway by Direttore"
+                        gate = raw_ip  # We assume this is the gateway now!
+                
+                if skip_msg:
+                    # Burn this address: update description so it's not reused
+                    ip_id = data.get("id")
+                    if ip_id:
+                        await client.patch(
+                            f"{settings.netbox_url}/api/ipam/ip-addresses/{ip_id}/",
+                            json={"description": skip_msg},
+                            headers=_nb_headers()
+                        )
+                    continue  # Try allocating the next one
+                break  # Good address found!
+
+            if not data:
+                raise HTTPException(status_code=502, detail="Exhausted available IPs while skipping network/gateway addresses.")
+
+            return _slim_ip(data, gateway=gate)
+    except httpx.HTTPError as e:
+        detail = str(e)
+        if hasattr(e, "response") and e.response is not None:
+            try:
+                detail = e.response.json()
+            except Exception:
+                pass
+        raise HTTPException(status_code=502, detail=f"NetBox error: {detail}")
 
 
 # ---------------------------------------------------------------------------

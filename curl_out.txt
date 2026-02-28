@@ -1,0 +1,1 @@
+{"detail":"HTTPSConnectionPool(host='192.168.1.100', port=8006): Max retries exceeded with url: /api2/json/access/ticket (Caused by ConnectTimeoutError(<HTTPSConnection(host='192.168.1.100', port=8006) at 0x10b7367b0>, 'Connection to 192.168.1.100 timed out. (connect timeout=5)'))"}
