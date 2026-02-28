@@ -1,11 +1,11 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel
 
 class NetBoxStatusResponse(BaseModel):
     reachable: bool
-    version: Optional[str] = None
-    url: Optional[str] = None
-    reason: Optional[str] = None
+    version: str | None = None
+    url: str | None = None
+    reason: str | None = None
 
 class IPAddressSchema(BaseModel):
     id: int
@@ -15,9 +15,9 @@ class IPAddressSchema(BaseModel):
     description: str
     status: str
     vrf: str
-    tags: List[str]
-    prefix_gateway: Optional[str] = None
-    custom_fields: Dict[str, Any]
+    tags: list[str]
+    prefix_gateway: str | None = None
+    custom_fields: dict[str, Any]
 
 class PrefixSchema(BaseModel):
     id: int
@@ -28,10 +28,10 @@ class PrefixSchema(BaseModel):
     description: str
     site: str
     role: str
-    tags: List[str]
-    gateway: Optional[str] = None
+    tags: list[str]
+    gateway: str | None = None
     dns_servers: str
-    custom_fields: Dict[str, Any]
+    custom_fields: dict[str, Any]
 
 class VLANSchema(BaseModel):
     id: int
@@ -42,5 +42,5 @@ class VLANSchema(BaseModel):
     group: str
     role: str
     description: str
-    tags: List[str]
-    custom_fields: Dict[str, Any]
+    tags: list[str]
+    custom_fields: dict[str, Any]

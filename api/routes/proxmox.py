@@ -1,6 +1,6 @@
 """FastAPI router — Proxmox nodes, VMs, containers, networks, storage, task polling."""
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 
 from api.services.proxmox import client as px_client
@@ -33,7 +33,7 @@ def _proxmox_error(e: Exception) -> str:
 # ---------------------------------------------------------------------------
 
 @router.get("/nodes")
-def get_nodes() -> List[Dict[str, Any]]:
+def get_nodes() -> list[dict[str, Any]]:
     """List all Proxmox nodes with resource summary."""
     try:
         return px_client.get_nodes()
@@ -46,7 +46,7 @@ def get_nodes() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 @router.get("/nodes/{node}/networks")
-def get_networks(node: str) -> List[Dict[str, Any]]:
+def get_networks(node: str) -> list[dict[str, Any]]:
     """List bridge-type network interfaces available on a node."""
     try:
         return px_net.list_networks(node)
@@ -59,7 +59,7 @@ def get_networks(node: str) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 @router.get("/nodes/{node}/storage")
-def get_storage(node: str) -> List[Dict[str, Any]]:
+def get_storage(node: str) -> list[dict[str, Any]]:
     """List storage pools on a node that support VM images or CT rootfs."""
     try:
         return px_stor.list_storage(node)
@@ -72,15 +72,15 @@ def get_storage(node: str) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 @router.get("/nodes/{node}/vms")
-def get_vms(node: str) -> List[Dict[str, Any]]:
+def get_vms(node: str) -> list[dict[str, Any]]:
     """List all QEMU VMs on a node."""
     return px_vms.list_vms(node)
 
 
 @router.post("/nodes/{node}/vms", status_code=202)
-def create_vm(node: str, req: CreateVMRequest) -> Dict[str, Any]:
+def create_vm(node: str, req: CreateVMRequest) -> dict[str, Any]:
     """Create a new QEMU VM. Returns task UPID."""
-    params: Dict[str, Any] = {
+    params: dict[str, Any] = {
         "vmid": req.vmid,
         "name": req.name,
         "cores": req.cores,
@@ -107,7 +107,7 @@ def vm_action(
     node: str,
     vmid: int,
     action: Literal["start", "stop", "reboot", "shutdown", "delete"],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Start, stop, reboot, shutdown, or delete a VM."""
     try:
         upid = px_vms.action_vm(node, vmid, action)
@@ -121,15 +121,15 @@ def vm_action(
 # ---------------------------------------------------------------------------
 
 @router.get("/nodes/{node}/lxc")
-def get_containers(node: str) -> List[Dict[str, Any]]:
+def get_containers(node: str) -> list[dict[str, Any]]:
     """List all LXC containers on a node."""
     return px_ct.list_containers(node)
 
 
 @router.post("/nodes/{node}/lxc", status_code=202)
-def create_container(node: str, req: CreateLXCRequest) -> Dict[str, Any]:
+def create_container(node: str, req: CreateLXCRequest) -> dict[str, Any]:
     """Create a new LXC container. Returns task UPID."""
-    params: Dict[str, Any] = {
+    params: dict[str, Any] = {
         "vmid": req.vmid,
         "hostname": req.hostname,
         "cores": req.cores,
@@ -163,7 +163,7 @@ def container_action(
     node: str,
     vmid: int,
     action: Literal["start", "stop", "reboot", "shutdown", "delete"],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Start, stop, reboot, shutdown, or delete a container."""
     try:
         upid = px_ct.action_container(node, vmid, action)
@@ -177,7 +177,7 @@ def container_action(
 # ---------------------------------------------------------------------------
 
 @router.get("/nodes/{node}/templates")
-def get_templates(node: str) -> List[Dict[str, Any]]:
+def get_templates(node: str) -> list[dict[str, Any]]:
     """List available ISOs and LXC templates on the node."""
     return px_tmpl.list_templates(node)
 
@@ -187,7 +187,7 @@ def get_templates(node: str) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 @router.get("/tasks/{node}/{upid:path}")
-def get_task(node: str, upid: str) -> Dict[str, Any]:
+def get_task(node: str, upid: str) -> dict[str, Any]:
     """Poll a Proxmox task by UPID. Returns status and exitstatus when done."""
     try:
         return px_vms.get_task_status(node, upid)

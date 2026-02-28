@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
 """FastAPI router — resource reservations and iCAL export."""
 
 import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select, and_
@@ -21,7 +20,7 @@ router = APIRouter(prefix="/api/reservations", tags=["reservations"])
 # ---------------------------------------------------------------------------
 
 
-def _to_dict(r: Reservation) -> Dict[str, Any]:
+def _to_dict(r: Reservation) -> dict[str, Any]:
     return {
         "id": r.id,
         "title": r.title,
@@ -42,10 +41,10 @@ def _to_dict(r: Reservation) -> Dict[str, Any]:
 
 @router.get("/")
 async def list_reservations(
-    start: Optional[str] = None,
-    end: Optional[str] = None,
+    start: str | None = None,
+    end: str | None = None,
     db: AsyncSession = Depends(get_db),
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """List reservations, optionally filtered by date range."""
     stmt = select(Reservation)
     if start:
@@ -59,7 +58,7 @@ async def list_reservations(
 @router.post("/", status_code=201)
 async def create_reservation(
     body: ReservationCreate, db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create a reservation after checking for conflicts on the same node."""
     if body.end_dt <= body.start_dt:
         raise HTTPException(status_code=400, detail="end_dt must be after start_dt")
@@ -91,7 +90,7 @@ async def create_reservation(
 @router.get("/{reservation_id}")
 async def get_reservation(
     reservation_id: int, db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     r = await db.get(Reservation, reservation_id)
     if not r:
         raise HTTPException(status_code=404, detail="Reservation not found")
@@ -101,7 +100,7 @@ async def get_reservation(
 @router.patch("/{reservation_id}")
 async def update_reservation(
     reservation_id: int, body: ReservationUpdate, db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     r = await db.get(Reservation, reservation_id)
     if not r:
         raise HTTPException(status_code=404, detail="Reservation not found")

@@ -1,22 +1,20 @@
-#!/usr/bin/env python3
 """QEMU VM operations against Proxmox."""
 
-import time
 import uuid
-from typing import Any, Dict, List
+from typing import Any
 
 from api.config import settings
 from api.services.proxmox.client import get_client, MOCK_VMS
 
 
-def list_vms(node: str) -> List[Dict[str, Any]]:
+def list_vms(node: str) -> list[dict[str, Any]]:
     if settings.proxmox_mock:
         return MOCK_VMS.get(node, [])
     px = get_client()
     return px.nodes(node).qemu.get()
 
 
-def create_vm(node: str, params: Dict[str, Any]) -> str:
+def create_vm(node: str, params: dict[str, Any]) -> str:
     """Create a QEMU VM and return the UPID task identifier."""
     if settings.proxmox_mock:
         task_id = f"UPID:{node}:mock-{uuid.uuid4().hex[:8]}:qmcreate"
@@ -44,7 +42,7 @@ def action_vm(node: str, vmid: int, action: str) -> str:
     return dispatch[action]()
 
 
-def get_task_status(node: str, upid: str) -> Dict[str, Any]:
+def get_task_status(node: str, upid: str) -> dict[str, Any]:
     """Poll task status. In mock mode, simulate completion after a brief delay."""
     if settings.proxmox_mock:
         # Simulate progress based on task age embedded in upid (mock always completes)
