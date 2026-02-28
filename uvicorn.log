@@ -1,0 +1,9 @@
+INFO:     Started server process [59598]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://[::1]:8000 (Press CTRL+C to quit)
+INFO:     ::1:64021 - "POST /api/proxmox/nodes/pve1/lxc HTTP/1.1" 502 Bad Gateway
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [59598]

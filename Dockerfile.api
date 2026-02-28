@@ -10,4 +10,8 @@ COPY api/ ./api/
 COPY .env.example .env
 
 EXPOSE 8000
+<<<<<<< HEAD
 CMD ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+=======
+CMD ["uvicorn", "api.main:app", "--host", "::", "--port", "8000"]
+>>>>>>> 6d7c0d87b61f060ea53d17cc0dafdb46f6368e58

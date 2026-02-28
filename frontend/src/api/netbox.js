@@ -24,3 +24,11 @@ export const getPrefixes = (params = {}) =>
  */
 export const getVlans = (params = {}) =>
     client.get('/api/inventory/vlans', { params }).then(r => r.data);
+
+/**
+ * Allocate the next available IP inside a specific prefix in NetBox.
+ * @param {number} prefixId - The ID of the prefix
+ * @param {Object} data - Optional payload (e.g. { description: '...' })
+ */
+export const allocateIP = (prefixId, data = {}) =>
+    client.post(`/api/inventory/prefixes/${prefixId}/allocate`, data).then(r => r.data);
