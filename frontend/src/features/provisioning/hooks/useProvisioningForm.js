@@ -18,19 +18,22 @@ export function useProvisioningForm(type) {
         initialValues: {
             vmid: VMID_DEFAULT(),
             name: '',
+            username: type === 'lxc' ? 'root' : 'ubuntu',
+            sshKey: '',
+            password: 'lab123',
             cores: 2,
             memory: 2048,
             disk: 32,
             template: '',
-            password: 'lab123',
             storage: 'local-lvm',
             nics: [defaultNic(type)],
         },
     });
 
-    // Reset NICs when resource type changes
+    // Reset when resource type changes
     useEffect(() => {
         form.setFieldValue('nics', [defaultNic(type)]);
+        form.setFieldValue('username', type === 'lxc' ? 'root' : 'ubuntu');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [type]);
 
