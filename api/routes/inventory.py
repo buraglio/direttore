@@ -6,6 +6,9 @@ from fastapi import APIRouter, HTTPException, Query
 import httpx
 
 from api.config import settings
+from api.schemas.inventory import (
+    NetBoxStatusResponse, IPAddressSchema, PrefixSchema, VLANSchema
+)
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -23,7 +26,7 @@ def _nb_headers() -> Dict[str, str]:
 # Reachability
 # ---------------------------------------------------------------------------
 
-@router.get("/netbox-status")
+@router.get("/netbox-status", response_model=NetBoxStatusResponse)
 async def netbox_status() -> Dict[str, Any]:
     """Quick reachability check against the configured NetBox instance."""
     if not settings.netbox_token:

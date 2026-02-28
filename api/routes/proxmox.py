@@ -1,15 +1,14 @@
-#!/usr/bin/env python3
 """FastAPI router — Proxmox nodes, VMs, containers, networks, storage, task polling."""
 
 from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter, HTTPException
 
-from api.proxmox import client as px_client
-from api.proxmox import vms as px_vms
-from api.proxmox import containers as px_ct
-from api.proxmox import templates as px_tmpl
-from api.proxmox import network as px_net
-from api.proxmox import storage as px_stor
+from api.services.proxmox import client as px_client
+from api.services.proxmox import vms as px_vms
+from api.services.proxmox import containers as px_ct
+from api.services.proxmox import templates as px_tmpl
+from api.services.proxmox import network as px_net
+from api.services.proxmox import storage as px_stor
 from api.schemas.proxmox import (
     NICConfig, CreateVMRequest, LXCNICConfig, CreateLXCRequest
 )
