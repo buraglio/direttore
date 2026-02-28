@@ -13,6 +13,7 @@ site
 coverage.xml
 .netlify
 test.db
+*.db
 log.txt
 Pipfile.lock
 env3.*
