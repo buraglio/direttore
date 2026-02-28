@@ -24,3 +24,7 @@ async def get_db():
     """FastAPI dependency — yields an async DB session."""
     async with AsyncSessionLocal() as session:
         yield session
+
+
+# Alias used by newer modules (auth, users)
+get_session = get_db

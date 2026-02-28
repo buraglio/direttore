@@ -1,22 +1,31 @@
-import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Box, Text, Stack, ThemeIcon, rem, Tooltip } from '@mantine/core';
+import { Box, Text, Stack, ThemeIcon, rem, Tooltip, Badge, Button, Avatar } from '@mantine/core';
 import {
     IconLayoutDashboard,
     IconServer,
     IconRocket,
     IconCalendar,
+    IconLogout,
 } from '@tabler/icons-react';
+import { useAuth } from '../context/AuthContext';
+
+const ROLE_COLOR = { admin: 'cyan', operator: 'teal', viewer: 'gray' };
 
 const NAV = [
-    { to: '/dashboard', label: 'Dashboard', icon: IconLayoutDashboard },
-    { to: '/resources', label: 'Resources', icon: IconServer },
-    { to: '/provision', label: 'Provision', icon: IconRocket },
-    { to: '/reservations', label: 'Reservations', icon: IconCalendar },
+    { to: '/dashboard', label: 'Dashboard', icon: IconLayoutDashboard, permission: null },
+    { to: '/resources', label: 'Resources', icon: IconServer, permission: null },
+    { to: '/provision', label: 'Provision', icon: IconRocket, permission: 'write:provision' },
+    { to: '/reservations', label: 'Reservations', icon: IconCalendar, permission: 'write:reservations' },
 ];
 
 export default function Layout({ children }) {
     const location = useLocation();
+    const { user, logout } = useAuth();
+
+    // Only show nav items the current user has permission for
+    const visibleNav = NAV.filter(({ permission }) =>
+        !permission || user?.permissions?.includes(permission)
+    );
 
     return (
         <Box style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
@@ -42,7 +51,7 @@ export default function Layout({ children }) {
 
                 {/* Nav items */}
                 <Stack gap={4} px="sm">
-                    {NAV.map(({ to, label, icon: Icon }) => {
+                    {visibleNav.map(({ to, label, icon: Icon }) => {
                         const active = location.pathname.startsWith(to);
                         return (
                             <NavLink
@@ -76,9 +85,37 @@ export default function Layout({ children }) {
                     })}
                 </Stack>
 
-                {/* Footer */}
-                <Box mt="auto" px="lg" pt="lg">
-                    <Text size="xs" c="dimmed">v0.1.0 • mock mode</Text>
+                {/* Footer: user info + logout */}
+                <Box mt="auto" px="sm" pt="lg" style={{ borderTop: '1px solid var(--border)' }}>
+                    {user && (
+                        <Box mb="sm" px="xs">
+                            <Text size="xs" fw={600} c="white" truncate>
+                                {user.username}
+                            </Text>
+                            <Badge
+                                size="xs"
+                                color={ROLE_COLOR[user.role] || 'gray'}
+                                variant="light"
+                                mt={2}
+                            >
+                                {user.role}
+                            </Badge>
+                        </Box>
+                    )}
+                    <Tooltip label="Sign out" position="right">
+                        <Button
+                            id="sidebar-logout"
+                            variant="subtle"
+                            color="red"
+                            size="xs"
+                            fullWidth
+                            justify="start"
+                            leftSection={<IconLogout size={14} />}
+                            onClick={logout}
+                        >
+                            Sign out
+                        </Button>
+                    </Tooltip>
                 </Box>
             </Box>
 
@@ -89,3 +126,4 @@ export default function Layout({ children }) {
         </Box>
     );
 }
+

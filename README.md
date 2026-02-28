@@ -9,15 +9,16 @@ A vendor-agnostic network and compute lab automation platform combining **NetBox
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                   React Frontend (Vite)                 │
-│   Dashboard · Resources · Provision Wizard · Calendar   │
+│   Login · Dashboard · Resources · Provision · Calendar  │
 └──────────────────┬────────────────────────────┬─────────┘
-                   │ REST API                   │
+                   │ REST API (Bearer JWT)       │
 ┌──────────────────▼────────────────────────────▼─────────┐
 │                  FastAPI Backend (api/)                  │
-├─────────────┬────────────────┬──────────────────────────┤
-│  Proxmox    │  Reservations  │      NetBox Proxy        │
-│  (proxmoxer)│  (SQLAlchemy)  │      (httpx)             │
-└─────────────┴────────────────┴──────────────────────────┘
+├──────────┬──────────┬────────────┬──────────────────────┤
+│  Auth /  │ Proxmox  │ Reservatio │    NetBox Proxy       │
+│  Users   │(proxmoxr)│ (SQLAlchmy)│    (httpx)            │
+│  (JWT)   │          │            │                       │
+└──────────┴──────────┴────────────┴──────────────────────┘
         │                                      │
   Proxmox VE API                         NetBox API
   (QEMU VMs + LXC)                  (Device inventory)
@@ -58,6 +59,19 @@ Browse all VMs and LXC containers across nodes. Start, stop, and delete resource
 
 ### Reservation Calendar
 FullCalendar week/month/day view. Click any time slot to reserve a resource window. Conflict detection prevents double-booking the same node.
+
+### Authentication & Role-Based Access Control
+JWT-based authentication with three built-in roles:
+
+| Role | Dashboard & Resources | Provision & Reservations | Power Actions | Delete Resources | Manage Users |
+|---|---|---|---|---|---|
+| **admin** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **operator** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **viewer** | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+- The sidebar hides nav items the current user's role cannot access.
+- Access tokens automatically refresh in the background — sessions are transparent.
+- An initial **admin** account is created on first boot (configurable via `.env`).
 
 ---
 
@@ -117,6 +131,14 @@ PROXMOX_MOCK=true uvicorn api.main:app --host ::1 --reload --port 8000
 
 API docs available at **http://localhost:8000/docs**
 
+On first startup, if no users exist in the database the backend **automatically creates an `admin` account** using the values from `.env`:
+```
+INITIAL_ADMIN_USER=admin
+INITIAL_ADMIN_PASSWORD=changeme
+```
+> [!CAUTION]
+> Change the default admin password immediately after first login. See [Authentication & User Management](#authentication--user-management) below.
+
 ### 4. Frontend setup
 
 ```bash
@@ -125,11 +147,13 @@ npm install
 npm run dev
 ```
 
-Frontend available at **http://localhost:5173**
+Frontend available at **http://localhost:5173** — you will be redirected to `/login` automatically.
 
 ---
 
 ## Environment Variables
+
+### Proxmox / NetBox / Core
 
 | Variable | Default | Description |
 |---|---|---|
@@ -142,6 +166,23 @@ Frontend available at **http://localhost:5173**
 | `NETBOX_TOKEN` | — | NetBox API token |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./direttore.db` | SQLAlchemy async DB URL |
 | `API_CORS_ORIGINS` | `http://localhost:5173,...` | Comma-separated allowed CORS origins |
+
+### Auth / JWT
+
+| Variable | Default | Description |
+|---|---|---|
+| `JWT_SECRET_KEY` | `CHANGE_ME_...` | HS256 signing secret — **must** be changed in production |
+| `JWT_ALGORITHM` | `HS256` | JWT signing algorithm |
+| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access token lifetime (minutes) |
+| `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime (days) |
+| `INITIAL_ADMIN_USER` | `admin` | Username for the auto-created first-boot admin |
+| `INITIAL_ADMIN_PASSWORD` | `changeme` | Password for the auto-created first-boot admin |
+
+> [!IMPORTANT]
+> Generate a secure `JWT_SECRET_KEY` before going to production:
+> ```bash
+> python -c "import secrets; print(secrets.token_hex(32))"
+> ```
 
 ---
 
@@ -222,6 +263,26 @@ Frontend available at **http://localhost:5173**
 | `GET` | `/api/inventory/ip-addresses` | IP addresses with dual-stack and DNS info |
 | `GET` | `/api/inventory/prefixes` | IP prefixes with gateway and DNS hints |
 | `GET` | `/api/inventory/vlans` | VLANs list |
+| `POST` | `/api/inventory/prefixes/{id}/allocate` | Allocate the next available IP from a prefix |
+
+### Auth Endpoints
+
+> All endpoints except `/api/auth/token` and `/api/auth/refresh` require a valid `Authorization: Bearer <token>` header.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/auth/token` | — | Exchange username + password for access + refresh tokens |
+| `POST` | `/api/auth/refresh` | — | Exchange a refresh token for a new token pair |
+| `GET` | `/api/auth/me` | Any | Return current user profile + permissions |
+
+### User Management Endpoints (admin only)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/users/` | List all users |
+| `POST` | `/api/users/` | Create a new user |
+| `PATCH` | `/api/users/{id}` | Update role, password, or active status |
+| `DELETE` | `/api/users/{id}` | Delete a user |
 
 ---
 
@@ -267,6 +328,102 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ---
 
+## Authentication & User Management
+
+### First Login
+
+After the backend starts for the first time, log in at `/login` with the credentials set in your `.env`:
+
+```
+INITIAL_ADMIN_USER=admin
+INITIAL_ADMIN_PASSWORD=changeme
+```
+
+The backend logs a warning:
+```
+⚠  Created initial admin user 'admin'. Change the password immediately.
+```
+
+### Setting / Resetting a Password
+
+**Via the REST API (recommended for production):**
+
+```bash
+# 1. Obtain a token
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/token \
+  -d 'username=admin&password=changeme&grant_type=password' \
+  -H 'Content-Type: application/x-www-form-urlencoded' | jq -r .access_token)
+
+# 2. Find the target user ID
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/users/ | jq .
+
+# 3. Set a new password (replace 1 with the user's ID)
+curl -X PATCH http://localhost:8000/api/users/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"password": "my-new-secure-password"}'
+```
+
+**Via the interactive Swagger UI:**
+
+1. Open **http://localhost:8000/docs**
+2. Click **Authorize** → enter `admin` / `changeme`
+3. Navigate to `PATCH /api/users/{id}` → try it out → provide `{"password": "newpassword"}`
+
+**Emergency reset (direct DB access — no token needed):**
+
+```bash
+source .venv/bin/activate
+python - <<'EOF'
+import asyncio
+from sqlalchemy import select
+from api.db import AsyncSessionLocal
+from api.models import User
+from api.auth import hash_password
+
+async def reset():
+    async with AsyncSessionLocal() as s:
+        user = (await s.execute(select(User).where(User.username == "admin"))).scalar_one()
+        user.hashed_password = hash_password("new-secure-password")
+        await s.commit()
+        print(f"Password reset for user: {user.username}")
+
+asyncio.run(reset())
+EOF
+```
+
+### Managing Users
+
+```bash
+# Create a new operator-level user
+curl -X POST http://localhost:8000/api/users/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"username": "alice", "password": "secure1234", "role": "operator"}'
+
+# Demote a user to viewer
+curl -X PATCH http://localhost:8000/api/users/2 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"role": "viewer"}'
+
+# Deactivate (soft-ban) a user without deleting them
+curl -X PATCH http://localhost:8000/api/users/3 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"is_active": false}'
+```
+
+### Role Reference
+
+| Role | Permissions |
+|---|---|
+| `admin` | Full access — provision, delete, manage users, all read |
+| `operator` | Provision VMs/LXC, manage reservations, power actions, all read |
+| `viewer` | Read-only — dashboard + resources only |
+
+---
+
 ## Systemd Services (Production)
 
 For bare-metal production deployments, Direttore includes `systemd` service files to keep the API and Vite server running in the background.
@@ -281,8 +438,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now direttore-api
 sudo systemctl enable --now direttore-frontend
 
-# 3. Check status
+# 3. Check status and view logs
 sudo systemctl status direttore-api
+journalctl -u direttore-api -f
 ```
 
 ---
@@ -304,39 +462,49 @@ docker compose up
 ```
 direttore/
 ├── api/                      # FastAPI backend
-│   ├── main.py               # App entrypoint, CORS, lifespan
-│   ├── config.py             # Pydantic-settings from .env
-│   ├── db.py                 # Async SQLAlchemy engine
-│   ├── models.py             # Reservation, ResourcePool ORM models
+│   ├── main.py               # App entrypoint, CORS, lifespan, first-boot seed
+│   ├── config.py             # Pydantic-settings from .env (incl. JWT config)
+│   ├── auth.py               # JWT creation/verification, bcrypt password hashing
+│   ├── deps.py               # get_current_user, require_roles(), require_permission()
+│   ├── db.py                 # Async SQLAlchemy engine + get_session dependency
+│   ├── models.py             # Reservation, ResourcePool, User, Role ORM models
 │   ├── proxmox/
-│   │   ├── client.py         # proxmoxer wrapper + mock data (nodes, VMs, LXC, networks, storage)
+│   │   ├── client.py         # proxmoxer wrapper + mock data
 │   │   ├── vms.py            # QEMU VM CRUD
 │   │   ├── containers.py     # LXC container CRUD
 │   │   ├── templates.py      # ISO/template listing
 │   │   ├── network.py        # Bridge interface listing
 │   │   └── storage.py        # Storage pool listing
 │   └── routes/
-│       ├── proxmox.py        # /api/proxmox/* routes (incl. /networks, /storage)
+│       ├── auth.py           # /api/auth/* (token, refresh, me)
+│       ├── users.py          # /api/users/* (admin-only CRUD)
+│       ├── proxmox.py        # /api/proxmox/* routes
 │       ├── reservations.py   # /api/reservations/* routes
-│       └── inventory.py      # /api/inventory/* routes
+│       └── inventory.py      # /api/inventory/* routes (incl. prefix allocate)
 ├── frontend/                 # React + Vite SPA
 │   ├── src/
 │   │   ├── api/              # Axios client + typed API functions
+│   │   ├── context/
+│   │   │   └── AuthContext.jsx   # JWT storage, auto-refresh, login/logout
 │   │   ├── components/
-│   │   │   └── Layout.jsx    # Sidebar navigation
+│   │   │   ├── Layout.jsx        # Sidebar with user badge + logout
+│   │   │   └── ProtectedRoute.jsx# Auth + permission guard for routes
 │   │   └── pages/
+│   │       ├── Login.jsx         # Login form
 │   │       ├── Dashboard.jsx     # Node cards + resource bars
 │   │       ├── Resources.jsx     # VM/CT table with actions
-│   │       ├── Provision.jsx     # 5-step provisioning wizard
+│   │       ├── Provision.jsx     # 6-step provisioning wizard
 │   │       └── Reservations.jsx  # FullCalendar + booking modal
 │   └── Dockerfile.frontend
+├── systemd/                  # systemd unit files
+│   ├── direttore-api.service     # FastAPI/Uvicorn service
+│   └── direttore-frontend.service# Vite dev server service
 ├── templates/                # Jinja2 network config templates
 │   ├── junos/, arista/, panos/, nokia-sros/, mikrotik/
 │   └── html/                 # Legacy Flask template (superseded)
 ├── nornir-examples/          # Nornir task examples
 ├── inventory.py              # Nornir + NetBox inventory plugin
 ├── deploy.py                 # Git-backed config deployment
-├── scheduler.py              # Legacy iCAL scheduler (superseded by API)
 ├── requirements-api.txt      # Backend Python dependencies
 ├── Dockerfile.api            # Backend Docker image
 ├── docker-compose.yml        # Full-stack local dev
@@ -399,14 +567,18 @@ python nornir_automation/generate_and_push.py
 
 ## Roadmap
 
-| Feature | Effort |
-|---|---|
-| RBAC / Auth (Auth0 or local) | 10 hrs |
-| Real-time VM console (xterm.js + WebSocket) | 15 hrs |
-| Snapshot management UI | 5 hrs |
-| Prometheus metrics endpoint | 8 hrs |
-| Two-way iCAL sync (CalDAV) | 8 hrs |
-| YANG config validation | 5 hrs |
+| Feature | Status | Effort |
+|---|---|---|
+| JWT RBAC Auth (admin / operator / viewer) | ✅ Done | — |
+| NetBox IPAM auto-allocation (IPv4 + IPv6) | ✅ Done | — |
+| Systemd service units | ✅ Done | — |
+| User management UI (in-app admin panel) | Planned | 6 hrs |
+| Real-time VM console (xterm.js + WebSocket) | Planned | 15 hrs |
+| Snapshot management UI | Planned | 5 hrs |
+| Prometheus metrics endpoint | Planned | 8 hrs |
+| Two-way iCAL sync (CalDAV) | Planned | 8 hrs |
+| YANG config validation | Planned | 5 hrs |
+| Keycloak / OIDC SSO migration path | Planned | 8 hrs |
 
 ---
 

@@ -2,10 +2,10 @@
 """SQLAlchemy ORM models for Direttore."""
 
 import datetime
-from sqlalchemy import DateTime, Integer, String, Enum as SAEnum
+import enum
+from sqlalchemy import Boolean, DateTime, Integer, String, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from api.db import Base
-import enum
 
 
 class ResourceType(str, enum.Enum):
@@ -47,3 +47,45 @@ class ResourcePool(Base):
     proxmox_node: Mapped[str] = mapped_column(String(64), nullable=False)
     max_vms: Mapped[int] = mapped_column(Integer, default=10)
     max_lxc: Mapped[int] = mapped_column(Integer, default=20)
+
+
+# ---------------------------------------------------------------------------
+# Auth models
+# ---------------------------------------------------------------------------
+
+class Role(str, enum.Enum):
+    admin    = "admin"     # Full access: provision, delete, manage users
+    operator = "operator"  # Can provision and manage VMs/LXC, cannot manage users
+    viewer   = "viewer"    # Read-only: dashboard, resources, reservations
+
+    def permissions(self) -> list[str]:
+        """Return the list of permission strings this role grants."""
+        base = ["read:dashboard", "read:resources", "read:reservations"]
+        if self in (Role.admin, Role.operator):
+            base += [
+                "write:provision",
+                "write:reservations",
+                "action:vm_power",
+            ]
+        if self == Role.admin:
+            base += [
+                "write:users",
+                "delete:resources",
+                "read:users",
+            ]
+        return base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(256), nullable=False)
+    role: Mapped[Role] = mapped_column(SAEnum(Role), nullable=False, default=Role.viewer)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.datetime.utcnow
+    )
+    last_login: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
+
