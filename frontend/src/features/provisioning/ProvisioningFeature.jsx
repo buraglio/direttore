@@ -175,7 +175,7 @@ export default function ProvisioningFeature() {
             <Title order={2} mb={4} style={{ color: 'var(--text)' }}>Provision Resource</Title>
             <Text c="dimmed" size="sm" mb="xl">Create a VM or LXC container on a Proxmox node</Text>
 
-            <Paper p="xl" radius="md" style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxWidth: 780 }}>
+            <Paper p="xl" radius="md" style={{ background: 'var(--surface)', border: '1px solid var(--border)', maxWidth: 1200 }}>
                 <Stepper active={step} color="cyan" size="sm" mb="xl">
                     <Stepper.Step label="Type" description="VM or LXC" />
                     <Stepper.Step label="Template" description="OS image" />
