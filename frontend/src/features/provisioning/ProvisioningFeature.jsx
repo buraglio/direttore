@@ -12,6 +12,7 @@ import { bytesToGB } from './utils/formatters';
 
 import { TypeStep } from './components/TypeStep';
 import { TemplateStep } from './components/TemplateStep';
+import { UserStep } from './components/UserStep';
 import { ResourcesStep } from './components/ResourcesStep';
 import { ConfigStep } from './components/ConfigStep';
 import { ReviewStep } from './components/ReviewStep';
@@ -27,14 +28,16 @@ export default function ProvisioningFeature() {
     const [pickerNic, setPickerNic] = useState(null); // index of NIC being edited via NetBox
     const pollRef = useRef(null);
 
-    const {
-        nodes,
-        templates, isLoadingTemplates,
-        networks, isLoadingNetworks,
-        storage, isLoadingStorage
-    } = useProvisioningData(activeNode || nodes?.[0]?.node, step);
+    const provisioningData = useProvisioningData(activeNode, step);
+    const nodes = provisioningData.nodes || [];
+    const templates = provisioningData.templates || [];
+    const isLoadingTemplates = provisioningData.isLoadingTemplates;
+    const networks = provisioningData.networks || [];
+    const isLoadingNetworks = provisioningData.isLoadingNetworks;
+    const storage = provisioningData.storage || [];
+    const isLoadingStorage = provisioningData.isLoadingStorage;
 
-    const node = activeNode || nodes[0]?.node;
+    const node = activeNode || (nodes.length > 0 ? nodes[0].node : null);
 
     const {
         form,
@@ -101,6 +104,9 @@ export default function ProvisioningFeature() {
                     name: values.name,
                     disk: `${values.disk}G`,
                     iso: values.template || undefined,
+                    username: values.username,
+                    password: values.password,
+                    ssh_key: values.sshKey,
                 });
             } else {
                 return createContainer(node, {
@@ -109,6 +115,8 @@ export default function ProvisioningFeature() {
                     disk_size: values.disk,
                     template: values.template,
                     password: values.password,
+                    username: values.username,
+                    ssh_key: values.sshKey,
                     start_after_create: true,
                 });
             }
@@ -117,7 +125,7 @@ export default function ProvisioningFeature() {
             setUpid(data.upid);
             setTaskStatus('running');
             setProgress(5);
-            setStep(5);
+            setStep(6); // Step 6 is Progress now
         },
     });
 
@@ -149,6 +157,8 @@ export default function ProvisioningFeature() {
         ['Disk', `${form.values.disk} GB`],
         ['Storage', form.values.storage],
         ['Template', form.values.template ? form.values.template.split('/').pop() : 'none'],
+        ['Username', form.values.username],
+        ['SSH Key', form.values.sshKey ? 'Configured' : 'None'],
     ];
 
     const handleReset = () => {
@@ -169,7 +179,8 @@ export default function ProvisioningFeature() {
                 <Stepper active={step} color="cyan" size="sm" mb="xl">
                     <Stepper.Step label="Type" description="VM or LXC" />
                     <Stepper.Step label="Template" description="OS image" />
-                    <Stepper.Step label="Resources" description="CPU / RAM / disk" />
+                    <Stepper.Step label="User" description="Credentials" />
+                    <Stepper.Step label="Resources" description="CPU/RAM/disk" />
                     <Stepper.Step label="Network & Storage" description="NICs, VLAN, pool" />
                     <Stepper.Step label="Review" description="Confirm" />
                     <Stepper.Step label="Progress" description="Provisioning" />
@@ -209,19 +220,30 @@ export default function ProvisioningFeature() {
                     </>
                 )}
 
-                {/* Step 2: Resources */}
+                {/* Step 2: User Configuration */}
                 {step === 2 && (
                     <>
-                        <ResourcesStep type={type} form={form} />
+                        <UserStep form={form} />
                         <Group justify="space-between" mt="md">
                             <Button variant="subtle" onClick={() => setStep(1)}>Back</Button>
-                            <Button color="cyan" disabled={!form.values.name.trim()} onClick={() => setStep(3)}>Next</Button>
+                            <Button color="cyan" onClick={() => setStep(3)}>Next</Button>
                         </Group>
                     </>
                 )}
 
-                {/* Step 3: Network & Storage */}
+                {/* Step 3: Resources */}
                 {step === 3 && (
+                    <>
+                        <ResourcesStep type={type} form={form} />
+                        <Group justify="space-between" mt="md">
+                            <Button variant="subtle" onClick={() => setStep(2)}>Back</Button>
+                            <Button color="cyan" disabled={!form.values.name.trim()} onClick={() => setStep(4)}>Next</Button>
+                        </Group>
+                    </>
+                )}
+
+                {/* Step 4: Network & Storage */}
+                {step === 4 && (
                     <>
                         <ConfigStep
                             form={form}
@@ -236,18 +258,18 @@ export default function ProvisioningFeature() {
                             onPickNetBox={setPickerNic}
                         />
                         <Group justify="space-between" mt="md">
-                            <Button variant="subtle" onClick={() => setStep(2)}>Back</Button>
-                            <Button color="cyan" onClick={() => setStep(4)}>Next</Button>
+                            <Button variant="subtle" onClick={() => setStep(3)}>Back</Button>
+                            <Button color="cyan" onClick={() => setStep(5)}>Next</Button>
                         </Group>
                     </>
                 )}
 
-                {/* Step 4: Review */}
-                {step === 4 && (
+                {/* Step 5: Review */}
+                {step === 5 && (
                     <>
                         <ReviewStep type={type} node={node} form={form} reviewRows={reviewRows} />
                         <Group justify="space-between" mt="md">
-                            <Button variant="subtle" onClick={() => setStep(3)}>Back</Button>
+                            <Button variant="subtle" onClick={() => setStep(4)}>Back</Button>
                             <Button
                                 color="cyan"
                                 leftSection={<IconRocket size={14} />}
@@ -260,8 +282,8 @@ export default function ProvisioningFeature() {
                     </>
                 )}
 
-                {/* Step 5: Progress */}
-                {step === 5 && (
+                {/* Step 6: Progress */}
+                {step === 6 && (
                     <ProgressStep
                         type={type}
                         taskStatus={taskStatus}
@@ -270,7 +292,7 @@ export default function ProvisioningFeature() {
                         form={form}
                         node={node}
                         onReset={handleReset}
-                        onBack={() => setStep(4)}
+                        onBack={() => setStep(5)}
                     />
                 )}
             </Paper>

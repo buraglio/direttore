@@ -6,27 +6,29 @@ export function useProvisioningData(node, step) {
         queryKey: ['nodes'],
         queryFn: getNodes
     });
+    const nodes = nodesQ.data || [];
+    const effectiveNode = node || nodes[0]?.node;
 
     const templatesQ = useQuery({
-        queryKey: ['templates', node],
-        queryFn: () => getTemplates(node),
-        enabled: !!node && step === 1,
+        queryKey: ['templates', effectiveNode],
+        queryFn: () => getTemplates(effectiveNode),
+        enabled: !!effectiveNode && step === 1,
     });
 
     const networksQ = useQuery({
-        queryKey: ['networks', node],
-        queryFn: () => getNetworks(node),
-        enabled: !!node && step === 3,
+        queryKey: ['networks', effectiveNode],
+        queryFn: () => getNetworks(effectiveNode),
+        enabled: !!effectiveNode && step === 4, // Step 4 is Network Config
     });
 
     const storageQ = useQuery({
-        queryKey: ['storage', node],
-        queryFn: () => getStorage(node),
-        enabled: !!node && step === 3,
+        queryKey: ['storage', effectiveNode],
+        queryFn: () => getStorage(effectiveNode),
+        enabled: !!effectiveNode && step === 4,
     });
 
     return {
-        nodes: nodesQ.data || [],
+        nodes,
         isLoadingNodes: nodesQ.isLoading,
         templates: templatesQ.data || [],
         isLoadingTemplates: templatesQ.isLoading,
