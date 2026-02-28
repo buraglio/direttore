@@ -49,7 +49,7 @@ function IPAddressesTab({ onSelect }) {
         ...(family !== 'both' ? { family: Number(family) } : {}),
     };
 
-    const { data = [], isLoading, isError } = useQuery({
+    const { data = [], isLoading } = useQuery({
         queryKey: ['nb-ip-addresses', family],
         queryFn: () => getIPAddresses(params),
         staleTime: 60_000,
@@ -80,9 +80,8 @@ function IPAddressesTab({ onSelect }) {
             </Group>
 
             {isLoading && <Group justify="center" py="md"><Loader size="sm" color="cyan" /></Group>}
-            {isError && <Alert color="red" size="sm">Failed to load IP addresses from NetBox.</Alert>}
 
-            {!isLoading && !isError && (
+            {!isLoading && (
                 <ScrollArea h={320}>
                     <Table fz="xs" withRowBorders highlightOnHover>
                         <Table.Thead>
@@ -141,7 +140,7 @@ function PrefixesTab({ onSelect }) {
         ...(family !== 'both' ? { family: Number(family) } : {}),
     };
 
-    const { data = [], isLoading, isError } = useQuery({
+    const { data = [], isLoading } = useQuery({
         queryKey: ['nb-prefixes', family],
         queryFn: () => getPrefixes(params),
         staleTime: 60_000,
@@ -172,9 +171,8 @@ function PrefixesTab({ onSelect }) {
             </Group>
 
             {isLoading && <Group justify="center" py="md"><Loader size="sm" color="cyan" /></Group>}
-            {isError && <Alert color="red" size="sm">Failed to load prefixes from NetBox.</Alert>}
 
-            {!isLoading && !isError && (
+            {!isLoading && (
                 <ScrollArea h={320}>
                     <Table fz="xs" withRowBorders highlightOnHover>
                         <Table.Thead>
@@ -230,7 +228,7 @@ function PrefixesTab({ onSelect }) {
 function VlansTab({ onSelect }) {
     const [q, setQ] = useState('');
 
-    const { data = [], isLoading, isError } = useQuery({
+    const { data = [], isLoading } = useQuery({
         queryKey: ['nb-vlans'],
         queryFn: () => getVlans(),
         staleTime: 60_000,
@@ -249,9 +247,8 @@ function VlansTab({ onSelect }) {
             />
 
             {isLoading && <Group justify="center" py="md"><Loader size="sm" color="cyan" /></Group>}
-            {isError && <Alert color="red" size="sm">Failed to load VLANs from NetBox.</Alert>}
 
-            {!isLoading && !isError && (
+            {!isLoading && (
                 <ScrollArea h={320}>
                     <Table fz="xs" withRowBorders highlightOnHover>
                         <Table.Thead>

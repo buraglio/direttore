@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 """Proxmox API client — wraps proxmoxer with mock support."""
 
-from typing import Any, Dict, List
+from typing import Any
 from api.config import settings
 
 _proxmox = None
@@ -27,7 +26,7 @@ def get_client():
 # Mock data — returned when PROXMOX_MOCK=true
 # ---------------------------------------------------------------------------
 
-MOCK_NODES: List[Dict[str, Any]] = [
+MOCK_NODES: list[dict[str, Any]] = [
     {
         "node": "pve-01",
         "status": "online",
@@ -52,7 +51,7 @@ MOCK_NODES: List[Dict[str, Any]] = [
     },
 ]
 
-MOCK_VMS: Dict[str, List[Dict[str, Any]]] = {
+MOCK_VMS: dict[str, list[dict[str, Any]]] = {
     "pve-01": [
         {"vmid": 100, "name": "ubuntu-22-04", "status": "running", "cpus": 4, "maxmem": 4_294_967_296, "uptime": 76400, "type": "qemu"},
         {"vmid": 101, "name": "win2022-template", "status": "stopped", "cpus": 8, "maxmem": 8_589_934_592, "uptime": 0, "type": "qemu"},
@@ -64,7 +63,7 @@ MOCK_VMS: Dict[str, List[Dict[str, Any]]] = {
     ],
 }
 
-MOCK_LXC: Dict[str, List[Dict[str, Any]]] = {
+MOCK_LXC: dict[str, list[dict[str, Any]]] = {
     "pve-01": [
         {"vmid": 300, "name": "alpine-dns", "status": "running", "cpus": 1, "maxmem": 536_870_912, "uptime": 99000, "type": "lxc"},
         {"vmid": 301, "name": "ubuntu-web", "status": "stopped", "cpus": 2, "maxmem": 1_073_741_824, "uptime": 0, "type": "lxc"},
@@ -74,7 +73,7 @@ MOCK_LXC: Dict[str, List[Dict[str, Any]]] = {
     ],
 }
 
-MOCK_TEMPLATES: Dict[str, List[Dict[str, Any]]] = {
+MOCK_TEMPLATES: dict[str, list[dict[str, Any]]] = {
     "pve-01": [
         {"volid": "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.gz", "content": "vztmpl", "size": 122_683_392},
         {"volid": "local:vztmpl/debian-12-standard_12.0-1_amd64.tar.gz", "content": "vztmpl", "size": 89_400_320},
@@ -86,7 +85,7 @@ MOCK_TEMPLATES: Dict[str, List[Dict[str, Any]]] = {
     ],
 }
 
-MOCK_NETWORKS: Dict[str, List[Dict[str, Any]]] = {
+MOCK_NETWORKS: dict[str, list[dict[str, Any]]] = {
     "pve-01": [
         {"iface": "vmbr0", "type": "bridge", "active": 1, "comments": "Main LAN bridge"},
         {"iface": "vmbr1", "type": "bridge", "active": 1, "comments": "Lab VLAN trunk"},
@@ -98,7 +97,7 @@ MOCK_NETWORKS: Dict[str, List[Dict[str, Any]]] = {
     ],
 }
 
-MOCK_STORAGE: Dict[str, List[Dict[str, Any]]] = {
+MOCK_STORAGE: dict[str, list[dict[str, Any]]] = {
     "pve-01": [
         {
             "storage": "local-lvm", "type": "lvmthin", "content": "rootdir,images",
@@ -126,7 +125,7 @@ MOCK_STORAGE: Dict[str, List[Dict[str, Any]]] = {
 }
 
 
-def get_nodes() -> List[Dict[str, Any]]:
+def get_nodes() -> list[dict[str, Any]]:
     if settings.proxmox_mock:
         return MOCK_NODES
     px = get_client()

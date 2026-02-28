@@ -6,7 +6,6 @@ import {
 } from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
-import { notifications } from '@mantine/notifications';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -69,10 +68,6 @@ export default function Reservations() {
             qc.invalidateQueries(['reservations']);
             setNewModal(false);
             form.reset();
-        },
-        onError: (e) => {
-            const msg = e.response?.data?.detail || e.message;
-            notifications.show({ color: 'red', title: 'Conflict or error', message: msg });
         },
     });
 

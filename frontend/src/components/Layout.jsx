@@ -19,7 +19,7 @@ export default function Layout({ children }) {
     const location = useLocation();
 
     return (
-        <Box style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
+        <Box style={{ display: 'flex', minHeight: '100vh', width: '100%', background: 'var(--bg)' }}>
             {/* Sidebar */}
             <Box
                 style={{
