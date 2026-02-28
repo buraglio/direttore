@@ -87,9 +87,11 @@ def create_vm(node: str, req: CreateVMRequest) -> dict[str, Any]:
         "memory": req.memory,
         "ostype": req.ostype,
     }
-    # Attach NICs (net0, net1, …).
     for idx, nic in enumerate(req.nics):
         params[f"net{idx}"] = nic.to_proxmox_net_string()
+        ipconf = nic.to_proxmox_ipconfig_string()
+        if ipconf:
+            params[f"ipconfig{idx}"] = ipconf
 
     # Cloud-init User/Auth Configuration
     if req.username:
