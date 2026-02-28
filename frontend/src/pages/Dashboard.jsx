@@ -88,11 +88,6 @@ export default function Dashboard() {
             <Title order={2} mb={4} style={{ color: 'var(--text)' }}>Dashboard</Title>
             <Text c="dimmed" size="sm" mb="xl">Proxmox cluster overview — refreshes every 30s</Text>
 
-            {isError && (
-                <Paper p="md" mb="lg" style={{ background: 'rgba(248,81,73,0.1)', border: '1px solid var(--red)' }}>
-                    <Text size="sm" c="red">Could not reach API. Make sure the backend is running.</Text>
-                </Paper>
-            )}
 
             {isLoading ? (
                 <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">

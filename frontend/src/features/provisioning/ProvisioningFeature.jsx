@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Box, Title, Text, Stepper, Button, Group, Paper } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import { IconRocket } from '@tabler/icons-react';
 
 import { createVM, createContainer, pollTask } from '../../api/proxmox';
@@ -119,9 +118,6 @@ export default function ProvisioningFeature() {
             setTaskStatus('running');
             setProgress(5);
             setStep(5);
-        },
-        onError: (e) => {
-            notifications.show({ color: 'red', title: 'Provision failed', message: e.message });
         },
     });
 
