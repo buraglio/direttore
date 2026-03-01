@@ -52,6 +52,7 @@ class CreateVMRequest(BaseModel):
     nics: list[NICConfig] = Field(default_factory=lambda: [NICConfig()])
     ostype: str = "l26"
     start_after_create: bool = False
+    kvm: bool = True
     username: str | None = None
     password: str | None = None
     ssh_key: str | None = None

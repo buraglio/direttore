@@ -24,4 +24,10 @@ docker exec "$CONTAINER" mkdir -p /var/lib/vz/template/iso/
 docker exec "$CONTAINER" dd if=/dev/zero of=/var/lib/vz/template/iso/Rocky-9.4-x86_64-minimal.iso bs=1M count=1 2>/dev/null
 docker exec "$CONTAINER" dd if=/dev/zero of=/var/lib/vz/template/iso/ubuntu-22.04.4-live-server-amd64.iso bs=1M count=1 2>/dev/null
 
+echo "6. Creating network bridges..."
+docker exec "$CONTAINER" ip link add name vmbr0 type bridge 2>/dev/null || true
+docker exec "$CONTAINER" ip link set dev vmbr0 up 2>/dev/null || true
+docker exec "$CONTAINER" ip link add name vmbr1 type bridge 2>/dev/null || true
+docker exec "$CONTAINER" ip link set dev vmbr1 up 2>/dev/null || true
+
 echo "Initialization of $CONTAINER complete!"

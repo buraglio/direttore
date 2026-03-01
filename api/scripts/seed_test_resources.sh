@@ -16,6 +16,7 @@ curl -s -X POST -H "Content-Type: application/json" -d '{
   "disk": "32G",
   "storage": "local",
   "iso": "local:iso/Rocky-9.4-x86_64-minimal.iso",
+  "kvm": false,
   "nics": [{"bridge": "vmbr0", "model": "virtio"}],
   "ostype": "l26",
   "start_after_create": true
@@ -48,6 +49,7 @@ curl -s -X POST -H "Content-Type: application/json" -d '{
   "disk": "64G",
   "storage": "local",
   "iso": "local:iso/ubuntu-22.04.4-live-server-amd64.iso",
+  "kvm": false,
   "nics": [{"bridge": "vmbr0", "model": "virtio"}, {"bridge": "vmbr1", "model": "virtio", "vlan": 10}],
   "ostype": "l26",
   "start_after_create": true

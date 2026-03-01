@@ -7,7 +7,8 @@ import {
 import {
     IconPlayerPlay, IconPlayerStop, IconTrash, IconRefresh,
 } from '@tabler/icons-react';
-import { getNodes, getVMs, getContainers, vmAction, containerAction } from '../api/proxmox';
+import { getNodes, getVMs, getContainers, vmAction, containerAction, pollTask } from '../api/proxmox';
+import { notifications } from '@mantine/notifications';
 import { useNavigate } from 'react-router-dom';
 
 function toGB(bytes) { return (bytes / 1073741824).toFixed(1); }
@@ -16,7 +17,7 @@ function statusColor(status) {
     return { running: 'green', stopped: 'red', paused: 'yellow' }[status] || 'gray';
 }
 
-function ResourceTable({ items, type, node, onAction }) {
+function ResourceTable({ items, type, node, onAction, loadingAction }) {
     if (!items.length) return <Text c="dimmed" size="sm" py="md">No {type}s on this node.</Text>;
 
     return (
@@ -52,7 +53,8 @@ function ResourceTable({ items, type, node, onAction }) {
                                 <Tooltip label="Start" withArrow>
                                     <ActionIcon
                                         size="sm" variant="light" color="green"
-                                        disabled={item.status === 'running'}
+                                        loading={loadingAction?.vmid === item.vmid && loadingAction?.action === 'start'}
+                                        disabled={item.status === 'running' || (loadingAction && loadingAction.vmid === item.vmid)}
                                         onClick={() => onAction(item.vmid, 'start', type)}
                                     >
                                         <IconPlayerPlay size={12} />
@@ -61,7 +63,8 @@ function ResourceTable({ items, type, node, onAction }) {
                                 <Tooltip label="Stop" withArrow>
                                     <ActionIcon
                                         size="sm" variant="light" color="orange"
-                                        disabled={item.status !== 'running'}
+                                        loading={loadingAction?.vmid === item.vmid && loadingAction?.action === 'stop'}
+                                        disabled={item.status !== 'running' || (loadingAction && loadingAction.vmid === item.vmid)}
                                         onClick={() => onAction(item.vmid, 'stop', type)}
                                     >
                                         <IconPlayerStop size={12} />
@@ -70,6 +73,8 @@ function ResourceTable({ items, type, node, onAction }) {
                                 <Tooltip label="Delete" withArrow>
                                     <ActionIcon
                                         size="sm" variant="light" color="red"
+                                        loading={loadingAction?.vmid === item.vmid && loadingAction?.action === 'delete'}
+                                        disabled={loadingAction && loadingAction.vmid === item.vmid}
                                         onClick={() => onAction(item.vmid, 'delete', type)}
                                     >
                                         <IconTrash size={12} />
@@ -100,16 +105,66 @@ export default function Resources() {
         queryKey: ['lxc', node], queryFn: () => getContainers(node), enabled: !!node,
     });
 
+    const [loadingAction, setLoadingAction] = useState(null); // { vmid, action }
+
     const doAction = useMutation({
-        mutationFn: ({ vmid, action, type }) =>
-            type === 'vm' ? vmAction(node, vmid, action) : containerAction(node, vmid, action),
-        onSuccess: (_, vars) => {
-            notifications.show({
-                color: 'cyan', title: 'Task submitted',
-                message: `${vars.action} for VMID ${vars.vmid}`,
-            });
-            setTimeout(() => { qc.invalidateQueries(['vms', node]); qc.invalidateQueries(['lxc', node]); }, 1500);
+        mutationFn: async ({ vmid, action, type }) => {
+            const res = type === 'vm' ? await vmAction(node, vmid, action) : await containerAction(node, vmid, action);
+            if (!res.upid) throw new Error("No task UPID returned.");
+            return res.upid;
         },
+        onMutate: (vars) => {
+            setLoadingAction({ vmid: vars.vmid, action: vars.action });
+        },
+        onSuccess: async (upid, vars) => {
+            notifications.show({
+                id: upid,
+                color: 'blue', title: 'Task executing...',
+                message: `${vars.action} for VMID ${vars.vmid} is in progress.`,
+                loading: true,
+                autoClose: false,
+            });
+
+            // Poll the UPID task endpoint until status stops being 'running'
+            while (true) {
+                await new Promise(r => setTimeout(r, 2000));
+                try {
+                    const task = await pollTask(node, upid);
+                    if (task?.status === 'stopped') {
+                        if (task.exitstatus === 'OK') {
+                            notifications.update({
+                                id: upid,
+                                color: 'green', title: 'Task complete',
+                                message: `Successfully executed ${vars.action} on VMID ${vars.vmid}.`,
+                                loading: false, autoClose: 5000,
+                            });
+                        } else {
+                            notifications.update({
+                                id: upid,
+                                color: 'red', title: 'Task failed',
+                                message: `Proxmox error: ${task.exitstatus}`,
+                                loading: false, autoClose: 5000,
+                            });
+                        }
+                        break;
+                    }
+                } catch (e) {
+                    console.error("Polling error", e);
+                    break;
+                }
+            }
+
+            qc.invalidateQueries({ queryKey: ['vms', node] });
+            qc.invalidateQueries({ queryKey: ['lxc', node] });
+            setLoadingAction(null);
+        },
+        onError: (err, vars) => {
+            notifications.show({
+                color: 'red', title: 'Task failed to start',
+                message: err.message || `Failed to ${vars.action} VMID ${vars.vmid}`,
+            });
+            setLoadingAction(null);
+        }
     });
 
     const nodeOptions = nodes.map(n => ({ value: n.node, label: n.node }));
@@ -160,7 +215,7 @@ export default function Resources() {
                     <Tabs.Panel value="vms">
                         {vmsQ.isLoading ? <Skeleton height={100} /> : (
                             <ResourceTable
-                                items={vmsQ.data || []} type="vm" node={node}
+                                items={vmsQ.data || []} type="vm" node={node} loadingAction={loadingAction}
                                 onAction={(vmid, action, type) => doAction.mutate({ vmid, action, type })}
                             />
                         )}
@@ -169,7 +224,7 @@ export default function Resources() {
                     <Tabs.Panel value="lxc">
                         {lxcQ.isLoading ? <Skeleton height={100} /> : (
                             <ResourceTable
-                                items={lxcQ.data || []} type="lxc" node={node}
+                                items={lxcQ.data || []} type="lxc" node={node} loadingAction={loadingAction}
                                 onAction={(vmid, action, type) => doAction.mutate({ vmid, action, type })}
                             />
                         )}
