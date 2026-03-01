@@ -1,9 +1,6 @@
 import ProvisioningFeature from '../features/provisioning/ProvisioningFeature';
 
 export default function Provision() {
-<<<<<<< HEAD
-    return <ProvisioningFeature />;
-=======
     const [step, setStep] = useState(0);
     const [type, setType] = useState('vm');     // 'vm' | 'lxc'
     const [activeNode, setActiveNode] = useState(null);
@@ -503,5 +500,4 @@ export default function Provision() {
             />
         </Box>
     );
->>>>>>> 6d7c0d87b61f060ea53d17cc0dafdb46f6368e58
 }
