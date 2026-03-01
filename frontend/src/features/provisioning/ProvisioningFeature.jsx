@@ -53,7 +53,8 @@ export default function ProvisioningFeature() {
         if (storage.length && !storage.find(p => p.storage === form.values.storage)) {
             form.setFieldValue('storage', storage[0].storage);
         }
-    }, [storage, form]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [storage]);
 
     useEffect(() => {
         const bridges = networks || [];
@@ -63,7 +64,8 @@ export default function ProvisioningFeature() {
                 bridge: bridges.find(b => b.iface === nic.bridge) ? nic.bridge : bridges[0].iface,
             })));
         }
-    }, [networks, form]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [networks]);
 
     // ── Task polling ──────────────────────────────────────────────────────────
     useEffect(() => {
@@ -215,7 +217,7 @@ export default function ProvisioningFeature() {
                         />
                         <Group justify="space-between" mt="md">
                             <Button variant="subtle" onClick={() => setStep(0)}>Back</Button>
-                            <Button color="cyan" onClick={() => setStep(2)}>Next</Button>
+                            <Button color="cyan" disabled={!form.values.template} onClick={() => setStep(2)}>Next</Button>
                         </Group>
                     </>
                 )}
@@ -223,7 +225,7 @@ export default function ProvisioningFeature() {
                 {/* Step 2: User Configuration */}
                 {step === 2 && (
                     <>
-                        <UserStep form={form} />
+                        <UserStep form={form} type={type} />
                         <Group justify="space-between" mt="md">
                             <Button variant="subtle" onClick={() => setStep(1)}>Back</Button>
                             <Button color="cyan" onClick={() => setStep(3)}>Next</Button>

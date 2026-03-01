@@ -6,6 +6,10 @@ export const getVMs = (node) => client.get(`/api/proxmox/nodes/${node}/vms`).the
 
 export const getContainers = (node) => client.get(`/api/proxmox/nodes/${node}/lxc`).then(r => r.data);
 
+export const getVM = (node, vmid) => client.get(`/api/proxmox/nodes/${node}/vms/${vmid}`).then(r => r.data);
+
+export const getContainer = (node, vmid) => client.get(`/api/proxmox/nodes/${node}/lxc/${vmid}`).then(r => r.data);
+
 export const getTemplates = (node) => client.get(`/api/proxmox/nodes/${node}/templates`).then(r => r.data);
 
 export const getNetworks = (node) => client.get(`/api/proxmox/nodes/${node}/networks`).then(r => r.data);

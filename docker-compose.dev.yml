@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     build:
@@ -8,7 +6,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - PROXMOX_MOCK=true
+      - PROXMOX_MOCK=false
     env_file:
       - .env
     volumes:
@@ -29,3 +27,55 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+
+  proxmox:
+    image: rtedpro/proxmox:8.4.1-arm64
+    hostname: pve-01
+    privileged: true
+    ports:
+      - "8006:8006"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=netbox
+      - POSTGRES_USER=netbox
+      - POSTGRES_PASSWORD=netbox
+    volumes:
+      - netbox-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass netbox
+    volumes:
+      - netbox-redis-data:/data
+    restart: unless-stopped
+
+  netbox:
+    image: netboxcommunity/netbox:v3.7
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DB_HOST=postgres
+      - DB_USER=netbox
+      - DB_PASSWORD=netbox
+      - DB_NAME=netbox
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=netbox
+      - SECRET_KEY=dummy-secret-key-for-dev-dummy-secret-key-for-dev1
+      - ALLOWED_HOSTS=*
+      - DB_WAIT_DEBUG=1
+      - SKIP_SUPERUSER=false
+      # For some reason it keeps requiring me to use quotes around these when logging in
+      - SUPERUSER_NAME=admin
+      - SUPERUSER_PASSWORD=superuserpassword
+    restart: unless-stopped
+
+volumes:
+  netbox-postgres-data:
+  netbox-redis-data:
