@@ -6,7 +6,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - PROXMOX_MOCK=true
+      - PROXMOX_MOCK=false
     env_file:
       - .env
     volumes:
@@ -30,6 +30,7 @@ services:
 
   proxmox:
     image: rtedpro/proxmox:8.4.1-arm64
+    hostname: pve-01
     privileged: true
     ports:
       - "8006:8006"

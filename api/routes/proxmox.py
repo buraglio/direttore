@@ -103,7 +103,8 @@ def create_vm(node: str, req: CreateVMRequest) -> dict[str, Any]:
 
     if req.iso:
         params["cdrom"] = req.iso
-        params["scsi0"] = f"{req.storage}:vm-{req.vmid}-disk-0,size={req.disk}"
+        disk_val = req.disk.rstrip("Gg")
+        params["scsi0"] = f"{req.storage}:{disk_val}"
         params["ide2"] = f"{req.storage}:cloudinit"
 
     try:
