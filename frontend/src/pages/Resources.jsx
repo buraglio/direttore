@@ -10,6 +10,7 @@ import {
 import { getNodes, getVMs, getContainers, vmAction, containerAction, pollTask } from '../api/proxmox';
 import { notifications } from '@mantine/notifications';
 import { useNavigate } from 'react-router-dom';
+import ResourceDetailsModal from '../features/provisioning/components/ResourceDetailsModal';
 
 function toGB(bytes) { return (bytes / 1073741824).toFixed(1); }
 
@@ -17,7 +18,7 @@ function statusColor(status) {
     return { running: 'green', stopped: 'red', paused: 'yellow' }[status] || 'gray';
 }
 
-function ResourceTable({ items, type, node, onAction, loadingAction }) {
+function ResourceTable({ items, type, node, onAction, loadingAction, onRowClick }) {
     if (!items.length) return <Text c="dimmed" size="sm" py="md">No {type}s on this node.</Text>;
 
     return (
@@ -35,7 +36,7 @@ function ResourceTable({ items, type, node, onAction, loadingAction }) {
             </Table.Thead>
             <Table.Tbody>
                 {items.map(item => (
-                    <Table.Tr key={item.vmid}>
+                    <Table.Tr key={item.vmid} onClick={() => onRowClick && onRowClick({ vmid: item.vmid, type })} style={{ cursor: 'pointer' }}>
                         <Table.Td><Text size="sm" c="cyan.4" fw={500}>{item.vmid}</Text></Table.Td>
                         <Table.Td><Text size="sm" fw={500}>{item.name || item.hostname}</Text></Table.Td>
                         <Table.Td>
@@ -55,7 +56,7 @@ function ResourceTable({ items, type, node, onAction, loadingAction }) {
                                         size="sm" variant="light" color="green"
                                         loading={loadingAction?.vmid === item.vmid && loadingAction?.action === 'start'}
                                         disabled={item.status === 'running' || (loadingAction && loadingAction.vmid === item.vmid)}
-                                        onClick={() => onAction(item.vmid, 'start', type)}
+                                        onClick={(e) => { e.stopPropagation(); onAction(item.vmid, 'start', type); }}
                                     >
                                         <IconPlayerPlay size={12} />
                                     </ActionIcon>
@@ -65,7 +66,7 @@ function ResourceTable({ items, type, node, onAction, loadingAction }) {
                                         size="sm" variant="light" color="orange"
                                         loading={loadingAction?.vmid === item.vmid && loadingAction?.action === 'stop'}
                                         disabled={item.status !== 'running' || (loadingAction && loadingAction.vmid === item.vmid)}
-                                        onClick={() => onAction(item.vmid, 'stop', type)}
+                                        onClick={(e) => { e.stopPropagation(); onAction(item.vmid, 'stop', type); }}
                                     >
                                         <IconPlayerStop size={12} />
                                     </ActionIcon>
@@ -75,7 +76,7 @@ function ResourceTable({ items, type, node, onAction, loadingAction }) {
                                         size="sm" variant="light" color="red"
                                         loading={loadingAction?.vmid === item.vmid && loadingAction?.action === 'delete'}
                                         disabled={loadingAction && loadingAction.vmid === item.vmid}
-                                        onClick={() => onAction(item.vmid, 'delete', type)}
+                                        onClick={(e) => { e.stopPropagation(); onAction(item.vmid, 'delete', type); }}
                                     >
                                         <IconTrash size={12} />
                                     </ActionIcon>
@@ -106,6 +107,7 @@ export default function Resources() {
     });
 
     const [loadingAction, setLoadingAction] = useState(null); // { vmid, action }
+    const [selectedResource, setSelectedResource] = useState(null); // { vmid, type }
 
     const doAction = useMutation({
         mutationFn: async ({ vmid, action, type }) => {
@@ -217,6 +219,7 @@ export default function Resources() {
                             <ResourceTable
                                 items={vmsQ.data || []} type="vm" node={node} loadingAction={loadingAction}
                                 onAction={(vmid, action, type) => doAction.mutate({ vmid, action, type })}
+                                onRowClick={setSelectedResource}
                             />
                         )}
                     </Tabs.Panel>
@@ -226,11 +229,19 @@ export default function Resources() {
                             <ResourceTable
                                 items={lxcQ.data || []} type="lxc" node={node} loadingAction={loadingAction}
                                 onAction={(vmid, action, type) => doAction.mutate({ vmid, action, type })}
+                                onRowClick={setSelectedResource}
                             />
                         )}
                     </Tabs.Panel>
                 </Tabs>
             </Paper>
+
+            <ResourceDetailsModal
+                opened={!!selectedResource}
+                onClose={() => setSelectedResource(null)}
+                resource={selectedResource}
+                node={node}
+            />
         </Box>
     );
 }

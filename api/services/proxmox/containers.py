@@ -38,3 +38,16 @@ def action_container(node: str, vmid: int, action: str) -> str:
     if action not in dispatch:
         raise ValueError(f"Unknown container action: {action}")
     return dispatch[action]()
+
+def get_container_details(node: str, vmid: int) -> dict[str, Any]:
+    """Fetch full configuration and current status for an LXC container."""
+    if settings.proxmox_mock:
+        return {
+            "config": {"hostname": f"mock-lxc-{vmid}", "cores": 1, "memory": 512, "rootfs": "local:8G"},
+            "status": {"status": "stopped", "uptime": 12345, "cpu": 0.01, "maxmem": 512*1024*1024, "maxdisk": 8*1024*1024*1024}
+        }
+    px = get_client()
+    ct = px.nodes(node).lxc(vmid)
+    config = ct.config.get()
+    status = ct.status.current.get()
+    return {"config": config, "status": status}

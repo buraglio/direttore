@@ -49,3 +49,16 @@ def get_task_status(node: str, upid: str) -> dict[str, Any]:
         return {"upid": upid, "status": "stopped", "exitstatus": "OK", "node": node}
     px = get_client()
     return px.nodes(node).tasks(upid).status.get()
+
+def get_vm_details(node: str, vmid: int) -> dict[str, Any]:
+    """Fetch full configuration and current status for a VM."""
+    if settings.proxmox_mock:
+        return {
+            "config": {"name": f"mock-vm-{vmid}", "cores": 2, "memory": 2048, "scsi0": "local:32G"},
+            "status": {"status": "stopped", "uptime": 12345, "cpu": 0.05, "maxmem": 2048*1024*1024, "maxdisk": 32*1024*1024*1024}
+        }
+    px = get_client()
+    vm = px.nodes(node).qemu(vmid)
+    config = vm.config.get()
+    status = vm.status.current.get()
+    return {"config": config, "status": status}

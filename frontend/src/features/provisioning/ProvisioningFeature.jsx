@@ -225,7 +225,7 @@ export default function ProvisioningFeature() {
                 {/* Step 2: User Configuration */}
                 {step === 2 && (
                     <>
-                        <UserStep form={form} />
+                        <UserStep form={form} type={type} />
                         <Group justify="space-between" mt="md">
                             <Button variant="subtle" onClick={() => setStep(1)}>Back</Button>
                             <Button color="cyan" onClick={() => setStep(3)}>Next</Button>

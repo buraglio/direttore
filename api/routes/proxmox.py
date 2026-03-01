@@ -86,6 +86,19 @@ def get_vms(node: str) -> list[dict[str, Any]]:
     return vms
 
 
+@router.get("/nodes/{node}/vms/{vmid}")
+def get_vm_details(node: str, vmid: int) -> dict[str, Any]:
+    """Get detailed configuration and status for a specific VM."""
+    try:
+        details = px_vms.get_vm_details(node, vmid)
+        # Mock intercept status injection
+        if f"{node}_vm_{vmid}" in MOCK_RUNNING_INSTANCES:
+            details["status"]["status"] = "running"
+        return details
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.post("/nodes/{node}/vms", status_code=202)
 def create_vm(node: str, req: CreateVMRequest) -> dict[str, Any]:
     """Create a new QEMU VM. Returns task UPID."""
@@ -159,6 +172,19 @@ def get_containers(node: str) -> list[dict[str, Any]]:
         if f"{node}_lxc_{ct['vmid']}" in MOCK_RUNNING_INSTANCES:
             ct["status"] = "running"
     return cts
+
+
+@router.get("/nodes/{node}/lxc/{vmid}")
+def get_container_details(node: str, vmid: int) -> dict[str, Any]:
+    """Get detailed configuration and status for a specific LXC container."""
+    try:
+        details = px_ct.get_container_details(node, vmid)
+        # Mock intercept status injection
+        if f"{node}_lxc_{vmid}" in MOCK_RUNNING_INSTANCES:
+            details["status"]["status"] = "running"
+        return details
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/nodes/{node}/lxc", status_code=202)
